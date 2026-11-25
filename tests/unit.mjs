@@ -7,6 +7,7 @@ import { evaluate } from '../js/validate.js';
 import * as ble from '../js/ble.js';
 import { buildReferral } from '../js/referral.js';
 import { METRICS } from '../js/config.js';
+import { parseSpeech } from '../js/voice.js';
 
 const model = JSON.parse(fs.readFileSync(new URL('../js/model_artifact.json', import.meta.url)));
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok  ' + name); };
@@ -57,6 +58,12 @@ t('trend + hypertensive latest reading => High', () => {
   const r = run({ vals: { ...full, sbp: 144, dbp: 92 }, history: [{ ts: 'a', vals: { sbp: 120, dbp: 76 } }, { ts: 'b', vals: { sbp: 132, dbp: 84 } }] }); assert.equal(r.levelName, 'High');
 });
 
+t('urine protein + raised BP => High; prior pre-eclampsia => at least Mid', () => {
+  assert.equal(run({ vals: { ...full, sbp: 142, dbp: 90 }, context: { protein: '2+' } }).levelName, 'High');
+  assert.ok(run({ context: { hx: { prior_pe: true } } }).level >= 1);
+  assert.equal(run({ vals: { ...full, sbp: 144, dbp: 92 }, context: { hx: { chronic_htn: true } } }).levelName, 'High');
+  assert.equal(run({ context: { protein: 'trace' } }).levelName, 'Low');
+});
 t('implausible readings are blocked; override needs a reason', () => {
   const e = Object.fromEntries(METRICS.map(m => [m.key, { v: full[m.key], src: 'manual_entry' }]));
   e.spo2 = { v: 0, src: 'ble_device' }; e.hr = { v: 255, src: 'simulated_watch' };
@@ -92,5 +99,13 @@ t('referral contains ID, vitals, sources, symptoms, reasons, trend, timestamp, d
   const risk = run({ vals: { ...full, sbp: 172 }, symptoms: { ...SYM0, headache: true }, missing: ['bs'] });
   const txt = buildReferral({ patientId: 'MG-TEST1', age: 25, visit: { ts: '2026-01-01T10:00:00Z', weeks: 33, entries, status, symptoms: { ...SYM0, headache: true } }, risk });
   for (const s of ['MG-TEST1', 'HIGH', '[manual_entry]', '[simulated_watch]', '[simulated_device]', 'Blood sugar: NOT MEASURED', 'Severe headache YES', '3-VISIT TREND', 'ble_device:', 'Decision support only']) assert.ok(txt.includes(s), s);
+});
+t('voice parser: English and Hindi vitals and danger signs', () => {
+  const r = parseSpeech('blood pressure 128 over 84, heart rate 82, sugar 6.5, temperature 98.6, oxygen 97');
+  assert.deepEqual(r.metrics, { sbp: 128, dbp: 84, hr: 82, spo2: 97, bs: 6.5, temp: 37 });
+  const s = parseSpeech('severe headache yes, no blurred vision, swelling, baby movement reduced').symptoms;
+  assert.deepEqual(s, { headache: true, vision: false, swelling: true, fetal: true });
+  const h = parseSpeech('बीपी 130 80 नाड़ी 88 शुगर 112 सिर दर्द हाँ, धुंधला नहीं');
+  assert.equal(h.metrics.sbp, 130); assert.equal(h.metrics.hr, 88); assert.equal(h.metrics.bs, 6.2); assert.equal(h.symptoms.headache, true); assert.equal(h.symptoms.vision, false);
 });
 console.log(`\n${n} tests passed`);

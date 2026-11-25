@@ -14,7 +14,7 @@
 <body>
 <header class="top">
   <div class="brand"><img src="icons/icon.svg" alt="" width="28" height="28"><b>MamaGuard</b><span class="tag">antenatal risk monitor</span></div>
-  <div class="row"><div id="net" class="net online" role="status" aria-live="polite"><span class="dot"></span><span id="net-text">Online</span></div><span id="who" class="muted" hidden></span><button class="btn mini" id="signout" data-act="signout" hidden>Sign out</button></div>
+  <div class="row"><select id="lang" aria-label="Language" style="width:auto;padding:4px 8px"></select><div id="net" class="net online" role="status" aria-live="polite"><span class="dot"></span><span id="net-text">Online</span></div><span id="who" class="muted" hidden></span><button class="btn mini" id="signout" data-act="signout" hidden>Sign out</button></div>
 </header>
 
 <nav class="tabs" id="tabs" aria-label="Sections">
@@ -38,11 +38,18 @@
   <textarea id="reftext" readonly rows="18" aria-label="Referral message text"></textarea>
   <div class="row">
     <button class="btn primary" data-act="ref-copy">Copy</button>
-    <button class="btn" data-act="ref-share" id="refshare">Share</button>
+    <button class="btn" data-act="ref-wa">WhatsApp</button>
+    <button class="btn" data-act="ref-sms">SMS</button>
+    <button class="btn" data-act="ref-print">Print / PDF</button>
+    <button class="btn" data-act="ref-share" id="refshare">Share…</button>
     <button class="btn ghost" data-act="ref-close">Close</button>
     <span id="refnote" class="muted" role="status"></span>
   </div>
+  <p class="muted" style="font-size:.78rem" id="refprivacy">Sharing sends this text to the app you choose. It holds the anonymous Patient ID and vitals only, never a name.</p>
+  <div hidden>
+  </div>
 </dialog>
+<div id="printarea" aria-hidden="true"></div>
 <div id="gate" class="gate" hidden></div>
 <script type="module" src="js/app.js"></script>
 </body>

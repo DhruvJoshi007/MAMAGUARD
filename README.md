@@ -16,6 +16,10 @@ Offline-first progressive web app (PWA) for maternal and fetal risk screening at
 - **Risk = model + safety rules.** The model gives Low/Mid/High; rules can only raise it (BP ≥160/110, danger signs with raised BP, and more). The UI says whether the model or a rule drove the result.
 - **3-visit trend alert** (rule-based): BP higher at each of the last three visits, even if every reading looks borderline.
 - **Referral message** with Patient ID, vitals, source tags, symptoms, reasons, trend and timestamp; copy or share.
+- **Languages.** English, Hindi, Bengali, Marathi and Tamil (selector in the header; remembered per device). Translations are machine-drafted and need review by a native-speaking clinician before field use. The Model & data tab, CTG tab, referral text, trend text and model-driver explanations stay in English on purpose.
+- **Voice entry.** Speak vitals and danger-sign answers (for example "bp 120 over 80, headache no"). Uses the browser speech service (Chrome or Edge), so audio may be processed by its provider. The parser understands English phrases.
+- **Clinical context (optional).** Urine protein, weight/height (BMI), previous pre-eclampsia, chronic hypertension and diabetes. These act through safety rules only (they can raise risk, never lower it); the ML model does not use them.
+- **Referral sharing.** Copy, WhatsApp, SMS, Print / PDF (browser "Save as PDF"), plus a printable per-patient summary.
 - **Offline PWA** with online/offline banner, manifest and service worker.
 - **Fetal health (CTG) tab** (optional) using the Kaggle Fetal Health structure.
 

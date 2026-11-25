@@ -26,11 +26,12 @@ export function trendCheck(series) { // series: [{ts, sbp, dbp}] oldest -> newes
  *  history: prior saved visits [{ts, vals:{sbp,dbp}}] oldest->newest (excluding the current one)
  *  blocked/missing: metric keys; overrides: keys accepted via override
  */
-export function assess({ model, age, vals, symptoms, history = [], blocked = [], missing = [], overrides = [] }) {
+const PROTEIN = ['neg', 'trace', '1+', '2+', '3+'];
+export function assess({ model, age, vals, symptoms, history = [], blocked = [], missing = [], overrides = [], context = {} }) {
   const reasons = [];
-  const add = (kind, severity, text) => reasons.push({ kind, severity, text });
+  const add = (kind, severity, text, key, args) => reasons.push({ kind, severity, text, key, args });
   let floor = 0;              // lowest level the safety rules allow
-  const raise = (lvl, kind, text) => { floor = Math.max(floor, lvl); add(kind, lvl, text); };
+  const raise = (lvl, kind, text, key, args) => { floor = Math.max(floor, lvl); add(kind, lvl, text, key, args); };
 
   const { sbp, dbp, hr, spo2, bs, temp } = vals;
   const yes = k => symptoms[k] === true;
@@ -41,25 +42,34 @@ export function assess({ model, age, vals, symptoms, history = [], blocked = [],
   // ---- safety rules (override the model upwards, never downwards) ----
   const severeBP = (sbp != null && sbp >= 160) || (dbp != null && dbp >= 110);
   const hyperBP = (sbp != null && sbp >= 140) || (dbp != null && dbp >= 90);
-  if (severeBP) raise(2, 'rule', `Severe-range BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg (≥160 systolic or ≥110 diastolic) forces High risk regardless of the model.`);
-  if (present.length && hyperBP) raise(2, 'rule', `Danger sign(s) (${present.map(s => s.label.toLowerCase()).join(', ')}) together with raised BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg forces High risk (possible pre-eclampsia).`);
+  if (severeBP) raise(2, 'rule', `Severe-range BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg (≥160 systolic or ≥110 diastolic) forces High risk regardless of the model.`, 'r_severe', { sbp: sbp ?? '?', dbp: dbp ?? '?' });
+  if (present.length && hyperBP) raise(2, 'rule', `Danger sign(s) (${present.map(s => s.label.toLowerCase()).join(', ')}) together with raised BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg forces High risk (possible pre-eclampsia).`, 'r_danger_hyper', { signs: present.map(s => s.key), sbp: sbp ?? '?', dbp: dbp ?? '?' });
   if (present.some(s => s.key === 'headache' || s.key === 'vision') && !hasBP)
-    raise(2, 'rule', 'Severe headache / blurred vision reported and BP is NOT measured: pre-eclampsia cannot be excluded, treated as High risk until BP is taken.');
-  if (spo2 != null && spo2 < 90) raise(2, 'rule', `SpO₂ ${spo2}% is below 90% (wrist sensors are unreliable, but this needs prompt clinical re-check).`);
-  else if (spo2 != null && spo2 < 94) raise(1, 'rule', `SpO₂ ${spo2}% is below 94%: re-check with a clinical oximeter.`);
-  if (hyperBP && !severeBP) raise(1, 'rule', `BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg is in the hypertensive range for pregnancy (≥140 systolic or ≥90 diastolic): at least Mid risk.`);
-  if (present.length && !hyperBP) raise(1, 'rule', `Danger sign reported (${present.map(s => s.label.toLowerCase()).join(', ')}): at least Mid risk, assess promptly.`);
-  if (temp != null && temp >= 38.0) raise(1, 'rule', `Temperature ${temp.toFixed(1)} °C suggests fever: at least Mid risk.`);
+    raise(2, 'rule', 'Severe headache / blurred vision reported and BP is NOT measured: pre-eclampsia cannot be excluded, treated as High risk until BP is taken.', 'r_headache_nobp', {  });
+  if (spo2 != null && spo2 < 90) raise(2, 'rule', `SpO₂ ${spo2}% is below 90% (wrist sensors are unreliable, but this needs prompt clinical re-check).`, 'r_spo2_90', { v: spo2 });
+  else if (spo2 != null && spo2 < 94) raise(1, 'rule', `SpO₂ ${spo2}% is below 94%: re-check with a clinical oximeter.`, 'r_spo2_94', { v: spo2 });
+  if (hyperBP && !severeBP) raise(1, 'rule', `BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg is in the hypertensive range for pregnancy (≥140 systolic or ≥90 diastolic): at least Mid risk.`, 'r_hyper', { sbp: sbp ?? '?', dbp: dbp ?? '?' });
+  if (present.length && !hyperBP) raise(1, 'rule', `Danger sign reported (${present.map(s => s.label.toLowerCase()).join(', ')}): at least Mid risk, assess promptly.`, 'r_danger', { signs: present.map(s => s.key) });
+  if (temp != null && temp >= 38.0) raise(1, 'rule', `Temperature ${temp.toFixed(1)} °C suggests fever: at least Mid risk.`, 'r_fever', { v: temp.toFixed(1) });
   if (hr != null && (hr >= 120 || hr < 50)) raise(1, 'rule', `Resting heart rate ${hr} bpm is outside 50–119: at least Mid risk (wrist reading, confirm manually).`);
   if (bs != null && bs >= 11.1) raise(1, 'rule', `Blood sugar ${bs.toFixed(1)} mmol/L is ≥11.1: at least Mid risk.`);
+
+  // ---- extra clinical context (NOT model inputs: these act only through safety rules) ----
+  const pi = context.protein ? PROTEIN.indexOf(context.protein) : -1, hx = context.hx || {};
+  if (pi >= 2 && hyperBP) raise(2, 'rule', `Urine protein ${context.protein} with raised BP ${sbp ?? '?'}/${dbp ?? '?'} mmHg is a pre-eclampsia pattern: High risk.`, 'r_protein_bp', { p: context.protein, sbp: sbp ?? '?', dbp: dbp ?? '?' });
+  else if (pi >= 3) raise(1, 'rule', `Urine protein ${context.protein}: at least Mid risk, assess for pre-eclampsia.`);
+  if (hx.prior_pe && hyperBP) raise(2, 'rule', 'Previous pre-eclampsia with raised BP this visit: High risk.', 'r_pe_bp', {  });
+  else if (hx.prior_pe) raise(1, 'rule', 'Previous pre-eclampsia raises recurrence risk: at least Mid risk.', 'r_pe', {  });
+  if (hx.chronic_htn && hyperBP && !severeBP) raise(2, 'rule', 'Known chronic hypertension with BP in the hypertensive range: High risk.', 'r_chtn', {  });
+  if (hx.diabetes && bs != null && bs >= 7.8) raise(1, 'rule', `Diabetes history with blood sugar ${bs.toFixed(1)} mmol/L (≥7.8): at least Mid risk.`);
 
   // ---- trend (rule-based) ----
   const series = history.filter(h => h.vals?.sbp != null && h.vals?.dbp != null).map(h => ({ ts: h.ts, sbp: h.vals.sbp, dbp: h.vals.dbp }));
   if (hasBP) series.push({ ts: 'current', sbp, dbp });
   const trend = trendCheck(series);
   if (trend.alert) {
-    if (hyperBP) raise(2, 'trend', `TREND ALERT: ${trend.text} Latest reading is also in the hypertensive range, so High risk.`);
-    else raise(1, 'trend', `TREND ALERT: ${trend.text}`);
+    if (hyperBP) raise(2, 'trend', `TREND ALERT: ${trend.text} Latest reading is also in the hypertensive range, so High risk.`, 'r_trend_high', { text: trend.text });
+    else raise(1, 'trend', `TREND ALERT: ${trend.text}`, 'r_trend', { text: trend.text });
   }
 
   // ---- model ----
@@ -71,7 +81,7 @@ export function assess({ model, age, vals, symptoms, history = [], blocked = [],
     modelLevel = decide(model, probs);
     drv = drivers(model, x, modelLevel, probs).filter(d => d.delta > 0.02).slice(0, 3);
     extrapolated = outsideTraining(model, x).map(f => FEAT_LABEL[f]);
-    add('model', modelLevel, `ML model (UCI-trained random forest): ${LEVELS[modelLevel]} risk (${LEVELS.map((l, i) => `${l} ${Math.round(probs[i] * 100)}%`).join(' / ')})${model.high_threshold ? `. Triage setting: flags High when P(High) ≥ ${Math.round(model.high_threshold * 100)}%` : ''}.`);
+    add('model', modelLevel, `ML model (UCI-trained random forest): ${LEVELS[modelLevel]} risk (${LEVELS.map((l, i) => `${l} ${Math.round(probs[i] * 100)}%`).join(' / ')})${model.high_threshold ? `. Triage setting: flags High when P(High) ≥ ${Math.round(model.high_threshold * 100)}%` : ''}.`, 'r_model', { lvl: modelLevel, p: probs.map(v => Math.round(v * 100)), thr: model.high_threshold ? Math.round(model.high_threshold * 100) : 0 });
     if (drv.length) add('model', modelLevel, `Inputs pushing the model toward ${LEVELS[modelLevel]} (approximate): ` + drv.map(d => `${FEAT_LABEL[model.features[d.index]]} ${d.delta >= 0 ? '+' : ''}${Math.round(d.delta * 100)} pts`).join(', ') + '.');
     if (extrapolated.length) add('missing', 1, `Outside the model's training range: ${extrapolated.join(', ')}. The model is extrapolating; rely on the safety rules.`);
   }
@@ -89,13 +99,13 @@ export function assess({ model, age, vals, symptoms, history = [], blocked = [],
   if (!x) {
     provisional = true;
     const need = modelNeeds.map(k => M[k].label).concat(age == null ? ['Age'] : []);
-    add('missing', 1, `The ML model cannot run: missing ${need.join(', ')}. Missing data is never treated as Low risk.`);
+    add('missing', 1, `The ML model cannot run: missing ${need.join(', ')}. Missing data is never treated as Low risk.`, 'r_nomodel', { list: modelNeeds.concat(age == null ? ['age'] : []) });
   }
   if (unasked.length) {
     provisional = true;
-    add('missing', 1, `Danger-sign questions not answered (${unasked.map(s => s.label.toLowerCase()).join(', ')}): Low risk cannot be confirmed.`);
+    add('missing', 1, `Danger-sign questions not answered (${unasked.map(s => s.label.toLowerCase()).join(', ')}): Low risk cannot be confirmed.`, 'r_unasked', { signs: unasked.map(s => s.key) });
   }
-  if (blocked.length) add('missing', 1, `Reading(s) blocked as implausible and excluded from scoring: ${blocked.map(k => M[k].label).join(', ')}.`);
+  if (blocked.length) add('missing', 1, `Reading(s) blocked as implausible and excluded from scoring: ${blocked.map(k => M[k].label).join(', ')}.`, 'r_blocked', { list: blocked });
   if (overrides.length) add('missing', 1, `Implausible reading(s) accepted by override: ${overrides.map(k => M[k].label).join(', ')}. Review the reason before relying on them.`);
 
   let level = Math.max(modelLevel ?? 0, floor);

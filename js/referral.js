@@ -32,6 +32,8 @@ export function buildReferral({ patientId, age, visit, risk }) {
   L.push('SOURCE BREAKDOWN:');
   for (const k of Object.keys(sb)) L.push(` ${k}: ${sb[k].length ? sb[k].join(', ') : '-'}`);
   L.push('');
+  const c = visit.context || {}, hxl = Object.entries(c.hx || {}).filter(([, v]) => v).map(([k]) => ({ prior_pe: 'previous pre-eclampsia', chronic_htn: 'chronic hypertension', diabetes: 'diabetes' }[k]));
+  if (c.protein || c.weight || hxl.length) L.push(`CLINICAL CONTEXT: urine protein ${c.protein || 'not tested'}${c.weight && c.height ? `; BMI ${(c.weight / ((c.height / 100) ** 2)).toFixed(1)} (${c.weight} kg, ${c.height} cm)` : c.weight ? `; weight ${c.weight} kg` : ''}${hxl.length ? '; history: ' + hxl.join(', ') : ''}`), L.push('');
   L.push('DANGER SYMPTOMS: ' + SYMPTOMS.map(s => `${s.label} ${symText(visit.symptoms[s.key])}`).join('; '));
   L.push('');
   L.push('3-VISIT TREND (rule-based, not ML): ' + risk.trend.text);
@@ -39,4 +41,15 @@ export function buildReferral({ patientId, age, visit, risk }) {
   L.push('');
   L.push(DISCLAIMER);
   return L.join('\n');
+}
+
+// Plain-text patient summary (all saved visits) for printing.
+export function patientSummary(p) {
+  const L = [`MAMAGUARD PATIENT SUMMARY (decision support only)`, `Patient ID: ${p.id}   Age: ${p.age}`, `Consent recorded: ${fmtTime(p.consent.ts)}`, ''];
+  p.visits.forEach((v, i) => {
+    L.push(`Visit ${i + 1} · ${fmtTime(v.ts)}${v.weeks ? ` · ${v.weeks} wk` : ''}: ${v.risk.levelName.toUpperCase()}${v.risk.provisional ? ' (provisional)' : ''}${v.risk.trend.alert ? ' + trend alert' : ''}`);
+    L.push('  ' + METRICS.map(m => `${m.label} ${v.entries[m.key]?.v ?? 'n/m'}${v.entries[m.key]?.v != null ? ` [${v.entries[m.key].src}]` : ''}`).join('; '));
+    L.push('  Danger signs: ' + SYMPTOMS.map(s => `${s.label} ${symText(v.symptoms[s.key])}`).join('; '));
+  });
+  L.push('', DISCLAIMER); return L.join('\n');
 }

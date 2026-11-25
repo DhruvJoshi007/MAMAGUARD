@@ -153,3 +153,7 @@ details>summary{cursor:pointer;font-weight:600}
 .gatecard{width:min(400px,100%);background:var(--card);border:1px solid var(--brand);border-radius:18px;padding:24px;display:flex;flex-direction:column;gap:8px;box-shadow:0 20px 60px #0004;text-align:left}
 .gatecard img{align-self:center}.gatecard h1{text-align:center;font-size:1.4rem;margin:4px 0 0}.gatecard p{text-align:center}
 .gatecard button.big{margin-top:6px}
+
+#voicebtn.listening{border-color:var(--high);color:var(--high);animation:pulse 1s infinite}
+#printarea{display:none}
+@media print{body>*:not(#printarea){display:none!important}#printarea{display:block!important;color:#000;background:#fff}#printarea pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,Menlo,monospace}body{background:#fff}}

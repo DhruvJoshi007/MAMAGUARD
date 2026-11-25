@@ -5,7 +5,9 @@ import { assess } from './risk.js';
 import * as store from './store.js';
 import { Simulator, SCENARIOS, WATCH_PROFILE } from './sim.js';
 import { connectBle, bleSupported } from './ble.js';
-import { buildReferral, sourceBreakdown } from './referral.js';
+import { buildReferral, sourceBreakdown, patientSummary } from './referral.js';
+import { t as tt, getLang, setLang, LANGS, hasKey } from './i18n.js';
+import { parseSpeech, voiceSupported, listen } from './voice.js';
 import { bpChart } from './chart.js';
 import { initCtg } from './ctg.js';
 import { renderModelTab } from './modeltab.js';
@@ -25,35 +27,57 @@ function zoneOf(k, v) {
   return z || 'none';
 }
 const patient = () => store.getPatient(S.pid);
+const mLabel = m => hasKey('m_' + m.key) ? tt('m_' + m.key) : m.label;
+const sLabel = s => hasKey('y_' + s.key) ? tt('y_' + s.key) : s.label;
+const LVN = ['Low', 'Mid', 'High'];
+const lvlW = n => tt('lv_w_' + n), lvlU = n => tt('lv_' + n);
+const trArg = (k, v) => k === 'signs' || k === 'list' ? (v || []).map(x => hasKey('y_' + x) ? tt('y_' + x) : hasKey('m_' + x) ? tt('m_' + x) : x === 'age' ? tt('age_w') : x).join(', ') : v;
+function trReason(x) {
+  if (!x.key || getLang() === 'en' || !hasKey(x.key)) return x.text;
+  const a = {}; for (const [k, v] of Object.entries(x.args || {})) a[k] = trArg(k, v);
+  if (x.key === 'r_model') { const pr = x.args.p || []; return tt('r_model', { lvl: lvlW(LVN[x.args.lvl]), pl: LVN.map((l, i) => `${lvlW(l)} ${pr[i]}%`).join(' / ') }) + (x.args.thr ? ' ' + tt('r_thr', { thr: x.args.thr }) : ''); }
+  return tt(x.key, a);
+}
+function applyStatic() {
+  document.querySelectorAll('#tabs button').forEach(b => { b.textContent = tt('n_' + ({ patients: 'dash', visit: 'visit', history: 'hist', ctg: 'ctg', model: 'model' })[b.dataset.tab]); });
+  $('#signout').textContent = tt('signout');
+  $('#refttl').textContent = tt('ref_title');
+  for (const [id, k] of [['ref-copy', 'ref_copy'], ['ref-wa', 'ref_wa'], ['ref-sms', 'ref_sms'], ['ref-print', 'ref_print'], ['ref-share', 'ref_share'], ['ref-close', 'close']]) { const b = document.querySelector(`[data-act="${id}"]`); if (b) b.textContent = tt(k); }
+  const sel = $('#lang'); if (sel && sel.value !== getLang()) sel.value = getLang();
+}
+function wireLang() {
+  const sel = $('#lang'); sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); sel.value = getLang();
+  sel.addEventListener('change', () => { setLang(sel.value); S.lang = getLang(); applyStatic(); if (!$('#gate').hidden) { location.reload(); return; } S.draft && S.tab === 'visit' ? buildVisit() : showTab(S.tab); if (S.tab === 'patients') renderPatients(); });
+}
 
 /* ---------- one-time device login ---------- */
-function showWho() { const on = auth.isLoggedIn(); $('#who').hidden = $('#signout').hidden = !on; $('#who').textContent = on ? (auth.workerName() || 'Signed in') : ''; }
+function showWho() { const on = auth.isLoggedIn(); $('#who').hidden = $('#signout').hidden = !on; $('#who').textContent = on ? (auth.workerName() || tt('signed_in')) : ''; }
 function gate() {
   return new Promise(resolve => {
     const g = $('#gate'), setup = !auth.isSetUp();
     g.hidden = false; $('main').setAttribute('inert', ''); $('#tabs').setAttribute('inert', '');
     g.innerHTML = `<form class="gatecard" id="gateform" autocomplete="off">
-      <img src="icons/icon.svg" alt="" width="56" height="56"><h1>${setup ? 'Set up this device' : 'Welcome back'}</h1>
-      <p class="muted">${setup ? 'One-time setup. After this, MamaGuard stays signed in on this device.' : 'Enter your PIN to continue.'}</p>
-      ${setup ? '<label for="g-name">Your name or initials</label><input id="g-name" type="text" maxlength="40" placeholder="e.g. A. Rao" required>' : ''}
-      <label for="g-pin">${setup ? 'Choose a PIN (4–6 digits)' : 'PIN'}</label><input id="g-pin" type="password" inputmode="numeric" pattern="\\d{4,6}" maxlength="6" autocomplete="${setup ? 'new-password' : 'current-password'}" required>
-      ${setup ? '<label for="g-pin2">Repeat PIN</label><input id="g-pin2" type="password" inputmode="numeric" pattern="\\d{4,6}" maxlength="6" required>' : ''}
+      <img src="icons/icon.svg" alt="" width="56" height="56"><h1>${tt(setup ? 'g_setup' : 'g_welcome')}</h1>
+      <p class="muted">${tt(setup ? 'g_setup_p' : 'g_pin_p')}</p>
+      ${setup ? `<label for="g-name">${tt('g_name')}</label><input id="g-name" type="text" maxlength="40" placeholder="e.g. A. Rao" required>` : ''}
+      <label for="g-pin">${tt(setup ? 'g_pin_new' : 'g_pin')}</label><input id="g-pin" type="password" inputmode="numeric" pattern="\\d{4,6}" maxlength="6" autocomplete="${setup ? 'new-password' : 'current-password'}" required>
+      ${setup ? `<label for="g-pin2">${tt('g_pin2')}</label><input id="g-pin2" type="password" inputmode="numeric" pattern="\\d{4,6}" maxlength="6" required>` : ''}
       <div id="g-msg" class="warn" hidden></div>
-      <button class="btn primary big" type="submit">${setup ? 'Save and continue' : 'Sign in'}</button>
-      ${setup ? '' : '<button class="btn ghost" type="button" id="g-reset">Forgot PIN? Reset this device</button>'}
-      <p class="muted" style="font-size:.78rem">Local to this browser only. It keeps casual users out of the records; it is not a replacement for device security.</p></form>`;
+      <button class="btn primary big" type="submit">${tt(setup ? 'g_save' : 'g_signin')}</button>
+      ${setup ? '' : `<button class="btn ghost" type="button" id="g-reset">${tt('g_forgot')}</button>`}
+      <p class="muted" style="font-size:.78rem">${tt('g_local')}</p></form>`;
     $('#g-pin').focus();
     const msg = t => { const m = $('#g-msg'); m.hidden = !t; m.textContent = t || ''; };
     $('#gateform').addEventListener('submit', async e => {
       e.preventDefault();
       try {
-        if (setup) { if ($('#g-pin').value !== $('#g-pin2').value) return msg('PINs do not match.'); await auth.setup($('#g-name').value, $('#g-pin').value); }
+        if (setup) { if ($('#g-pin').value !== $('#g-pin2').value) return msg(tt('pin_mismatch')); await auth.setup($('#g-name').value, $('#g-pin').value); }
         else await auth.signIn($('#g-pin').value);
         g.hidden = true; g.innerHTML = ''; $('main').removeAttribute('inert'); $('#tabs').removeAttribute('inert'); showWho(); resolve();
       } catch (err) { msg(err.message); }
     });
     $('#g-reset')?.addEventListener('click', () => {
-      if (!$('#g-reset').dataset.sure) { $('#g-reset').dataset.sure = '1'; $('#g-reset').textContent = 'Click again: this erases ALL patient data on this device'; $('#g-reset').classList.add('danger'); return; }
+      if (!$('#g-reset').dataset.sure) { $('#g-reset').dataset.sure = '1'; $('#g-reset').textContent = tt('reset_sure'); $('#g-reset').classList.add('danger'); return; }
       store.deleteAll(); auth.resetProfile(); S.pid = null; location.reload();
     });
   });
@@ -61,21 +85,21 @@ function gate() {
 
 /* ---------- boot ---------- */
 async function boot() {
-  store.load();
+  store.load(); S.lang = getLang(); wireLang(); applyStatic();
   try { S.model = await getJson('js/model_artifact.json'); S.metrics = S.model.evaluation; }
   catch (e) { document.querySelector('main').innerHTML = `<div class="warn">Could not load the risk model (${esc(e.message)}). Reload while online once.</div>`; return; }
   if (!auth.isLoggedIn()) await gate(); else showWho();
   S.pid = store.lastPid();
   S.sim = new Simulator((k, v, src) => setReading(k, v, src, { stream: src === 'simulated_watch' && S.sim.streaming }));
-  wireNet(); wireEvents(); renderPatients(); showTab('patients');
+  wireNet(); wireEvents(); showTab('patients');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => { S.swReady = true; wireNet(); }).catch(() => {});
 }
 function wireNet() {
   const upd = () => {
     const on = navigator.onLine, n = $('#net');
     n.className = 'net ' + (on ? 'online' : 'offline');
-    $('#net-text').textContent = on ? 'Online' : 'Offline: working from local data' ;
-    if (S.swReady || navigator.serviceWorker?.controller) $('#net-text').textContent += ' · app cached for offline use';
+    $('#net-text').textContent = on ? tt('online') : tt('offline') ;
+    if (S.swReady || navigator.serviceWorker?.controller) $('#net-text').textContent += ' · ' + tt('cached');
   };
   if (!S.netWired) { addEventListener('online', upd); addEventListener('offline', upd); S.netWired = true; }
   upd();
@@ -83,7 +107,7 @@ function wireNet() {
 
 /* ---------- tabs ---------- */
 function showTab(t) {
-  S.tab = t;
+  S.tab = t; applyStatic();
   for (const b of $$('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
   for (const s of $$('main > section')) s.hidden = s.id !== 'tab-' + t;
   if (t !== 'patients') stopHeart();
@@ -97,24 +121,24 @@ function showTab(t) {
 }
 
 /* ---------- patients ---------- */
-function riskPill(r) { return r ? `<span class="pill ${r.levelName}">${r.levelName}${r.provisional ? ' (provisional)' : ''}</span>` : '<span class="pill none">no visits</span>'; }
-const STEPS = ['Consent', 'Patient', 'Start'];
+function riskPill(r) { return r ? `<span class="pill ${r.levelName}">${lvlW(r.levelName)}${r.provisional ? ' (' + tt('prov') + ')' : ''}</span>` : `<span class="pill none">${tt('no_visits')}</span>`; }
+const STEPS = () => [tt('s_consent'), tt('s_patient'), tt('s_start')];
 function flowHtml() {
-  const f = S.flow, steps = `<ol class="steps">${STEPS.map((s, i) => `<li class="${i < f.step ? 'done' : i === f.step ? 'on' : ''}"><span>${i < f.step ? '✓' : i + 1}</span>${s}</li>`).join('')}</ol>`;
+  const f = S.flow, steps = `<ol class="steps">${STEPS().map((s, i) => `<li class="${i < f.step ? 'done' : i === f.step ? 'on' : ''}"><span>${i < f.step ? '✓' : i + 1}</span>${s}</li>`).join('')}</ol>`;
   let body = '';
-  if (f.step === 0) body = `<h2>Patient consent</h2>
-    <label class="consent" for="np-consent"><input id="np-consent" type="checkbox" ${f.consent ? 'checked' : ''}><span>The patient has been told what is recorded and <b>consents</b> to anonymised, on-device storage of her vitals for this check-up. The time of consent will be recorded.</span></label>
-    <div class="row end"><button class="btn primary" data-act="flow-next" id="flow-next" ${f.consent ? '' : 'disabled'}>Continue</button></div>`;
-  if (f.step === 1) body = `<h2>Patient details</h2>
-    <label for="np-age">Age (years)</label><input id="np-age" type="number" inputmode="numeric" min="${AGE_BOUNDS[0]}" max="${AGE_BOUNDS[1]}" value="${esc(f.age)}" placeholder="e.g. 27">
-    <p class="muted">No names. A random anonymous Patient ID is created for this record.</p>
+  if (f.step === 0) body = `<h2>${tt('c_title')}</h2>
+    <label class="consent" for="np-consent"><input id="np-consent" type="checkbox" ${f.consent ? 'checked' : ''}><span>${tt('c_text')}</span></label>
+    <div class="row end"><button class="btn primary" data-act="flow-next" id="flow-next" ${f.consent ? '' : 'disabled'}>${tt('cont')}</button></div>`;
+  if (f.step === 1) body = `<h2>${tt('p_title')}</h2>
+    <label for="np-age">${tt('age')}</label><input id="np-age" type="number" inputmode="numeric" min="${AGE_BOUNDS[0]}" max="${AGE_BOUNDS[1]}" value="${esc(f.age)}" placeholder="e.g. 27">
+    <p class="muted">${tt('p_note')}</p>
     <div id="np-msg" class="warn" hidden></div>
-    <div class="row end"><button class="btn ghost" data-act="flow-back">Back</button><button class="btn primary" data-act="flow-next">Continue</button></div>`;
-  if (f.step === 2) body = `<h2>Start the visit</h2>
-    <button class="btn primary big" data-act="create-patient" id="np-create">Start live visit</button>
-    <p class="muted" style="text-align:center;margin:10px 0 6px">or try a demo scenario</p>
-    <div class="scn">${Object.entries(SCENARIOS).map(([k, s]) => `<button class="btn" data-act="scenario" data-sc="${k}"><b>${esc(s.name)}</b><small>${esc(s.blurb)}</small></button>`).join('')}</div>
-    <div class="row end"><button class="btn ghost" data-act="flow-back">Back</button></div>`;
+    <div class="row end"><button class="btn ghost" data-act="flow-back">${tt('back')}</button><button class="btn primary" data-act="flow-next">${tt('cont')}</button></div>`;
+  if (f.step === 2) body = `<h2>${tt('st_title')}</h2>
+    <button class="btn primary big" data-act="create-patient" id="np-create">${tt('st_live')}</button>
+    <p class="muted" style="text-align:center;margin:10px 0 6px">${tt('st_demo')}</p>
+    <div class="scn">${Object.entries(SCENARIOS).map(([k, s]) => `<button class="btn" data-act="scenario" data-sc="${k}"><b>${esc(hasKey('sc_'+k) ? tt('sc_'+k) : s.name)}</b><small>${esc(hasKey('sc_'+k+'_b') ? tt('sc_'+k+'_b') : s.blurb)}</small></button>`).join('')}</div>
+    <div class="row end"><button class="btn ghost" data-act="flow-back">${tt('back')}</button></div>`;
   return steps + body;
 }
 function renderPatients() {
@@ -124,19 +148,19 @@ function renderPatients() {
   el.innerHTML = `
   <section class="hero3d" id="hero3d">
     <div class="hl"><canvas id="heart3d" aria-label="Interactive 3D heart: drag to rotate" role="img"></canvas>
-      <h1>Antenatal risk,<br>at a glance</h1><p class="muted">Vitals in, risk and referral out. Works offline.</p></div>
+      <h1>${esc(tt('d_title')).replace('\n','<br>')}</h1><p class="muted">${tt('d_sub')}</p></div>
     <div class="flowcard" id="flowcard">${store.isPersistent() ? '' : '<p class="warn">Storage is blocked in this browser: data will be lost on reload.</p>'}<div id="flowbody">${flowHtml()}</div></div>
   </section>
-  <div class="stats"><div class="stat"><b>${list.length}</b><span>patients</span></div><div class="stat"><b>${all.length}</b><span>visits</span></div><div class="stat ${hi ? 'hi' : ''}"><b>${hi}</b><span>high-risk visits</span></div><div class="stat ${al ? 'md' : ''}"><b>${al}</b><span>trend alerts</span></div></div>
-  <h2>Recent patients</h2>
+  <div class="stats"><div class="stat"><b>${list.length}</b><span>${tt('stat_p')}</span></div><div class="stat"><b>${all.length}</b><span>${tt('stat_v')}</span></div><div class="stat ${hi ? 'hi' : ''}"><b>${hi}</b><span>${tt('stat_h')}</span></div><div class="stat ${al ? 'md' : ''}"><b>${al}</b><span>${tt('stat_t')}</span></div></div>
+  <h2>${tt('recent')}</h2>
   ${list.length ? list.map(p => { const last = p.visits.at(-1)?.risk; return `
     <div class="card"><div class="row" style="justify-content:space-between">
-      <div><b style="font-size:1.1rem">${esc(p.id)}</b> ${riskPill(last)} ${last?.trend?.alert ? '<span class="pill Mid">Trend alert</span>' : ''}<br>
-      <span class="muted">Age ${esc(p.age)} · ${p.visits.length} visit(s) · consent ${esc(fmtTime(p.consent.ts))}</span></div>
-      <div class="row"><button class="btn" data-act="open" data-pid="${esc(p.id)}">Open</button>
-      ${S.confirmDel === p.id ? `<button class="btn danger" data-act="delete-confirm" data-pid="${esc(p.id)}">Yes, permanently delete</button><button class="btn ghost" data-act="delete-cancel">Cancel</button>`
-        : `<button class="btn danger" data-act="delete" data-pid="${esc(p.id)}">Delete patient data</button>`}</div></div></div>`; }).join('') : '<p class="muted">No patients yet.</p>'}
-  ${list.length ? '<button class="btn ghost" data-act="delete-all">Delete ALL data on this device…</button>' : ''}`;
+      <div><b style="font-size:1.1rem">${esc(p.id)}</b> ${riskPill(last)} ${last?.trend?.alert ? `<span class="pill Mid">${tt('trend_alert')}</span>` : ''}<br>
+      <span class="muted">${tt('age_w')} ${esc(p.age)} · ${p.visits.length} ${tt('stat_v')} · ${tt('s_consent')} ${esc(fmtTime(p.consent.ts))}</span></div>
+      <div class="row"><button class="btn" data-act="open" data-pid="${esc(p.id)}">${tt('open')}</button>
+      ${S.confirmDel === p.id ? `<button class="btn danger" data-act="delete-confirm" data-pid="${esc(p.id)}">${tt('delc')}</button><button class="btn ghost" data-act="delete-cancel">${tt('cancel')}</button>`
+        : `<button class="btn danger" data-act="delete" data-pid="${esc(p.id)}">${tt('del')}</button>`}</div></div></div>`; }).join('') : `<p class="muted">${tt('none')}</p>`}
+  ${list.length ? `<button class="btn ghost" data-act="delete-all">${tt('delall')}</button>` : ''}`;
   startHeart($('#heart3d'));
   const hero = $('#hero3d'), card = $('#flowcard');
   hero.addEventListener('pointermove', e => { const r = hero.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5; card.style.setProperty('--ry', (x * 8).toFixed(2) + 'deg'); card.style.setProperty('--rx', (-y * 6).toFixed(2) + 'deg'); });
@@ -151,7 +175,7 @@ function createPatient(age, synthetic = false) {
 
 /* ---------- visit draft ---------- */
 function newDraft(weeks = null) {
-  return { weeks, entries: Object.fromEntries(METRICS.map(m => [m.key, { v: null, src: null }])), symptoms: Object.fromEntries(SYMPTOMS.map(s => [s.key, null])), ovOpen: {} };
+  return { weeks, entries: Object.fromEntries(METRICS.map(m => [m.key, { v: null, src: null }])), symptoms: Object.fromEntries(SYMPTOMS.map(s => [s.key, null])), ovOpen: {}, ctx: { protein: null, weight: null, height: null, hx: { prior_pe: false, chronic_htn: false, diabetes: false } } };
 }
 function setReading(key, v, src, { stream = false } = {}) {
   const d = S.draft; if (!d) return;
@@ -167,52 +191,61 @@ function log(msg) { S.log.unshift(`${new Date().toLocaleTimeString()}  ${msg}`);
 
 function buildVisit() {
   const el = $('#tab-visit'), p = patient();
-  if (!p) { el.innerHTML = '<div class="card"><h2>Visit</h2><p>Select or create a patient first (Patients tab).</p></div>'; return; }
+  if (!p) { el.innerHTML = `<div class="card"><h2>${tt('n_visit')}</h2><p>${tt('need_patient')}</p></div>`; return; }
   if (!S.draft) S.draft = newDraft();
-  if (!p.consent?.given) { el.innerHTML = '<div class="warn">No consent recorded for this patient. Device pairing and saving are locked.</div>'; return; }
+  if (!p.consent?.given) { el.innerHTML = `<div class="warn">${tt('no_consent')}</div>`; return; }
   const d = S.draft;
   const row = m => `
     <div class="mrow" data-key="${m.key}">
-      <div class="thead"><label for="in-${m.key}">${m.label}</label><span class="badge" data-badge></span></div>
-      <div class="tval"><button class="step" data-act="step" data-key="${m.key}" data-d="-1" aria-label="Decrease ${m.label}">−</button>
+      <div class="thead"><label for="in-${m.key}">${mLabel(m)}</label><span class="badge" data-badge></span></div>
+      <div class="tval"><button class="step" data-act="step" data-key="${m.key}" data-d="-1" aria-label="− ${mLabel(m)}">−</button>
         <input id="in-${m.key}" type="number" inputmode="decimal" step="${m.step}" data-key="${m.key}" value="${d.entries[m.key].v ?? ''}" placeholder="—" aria-describedby="msg-${m.key}">
-        <button class="step" data-act="step" data-key="${m.key}" data-d="1" aria-label="Increase ${m.label}">+</button></div>
-      <div class="tfoot"><span class="unit">${m.unit}</span><span class="zone" data-zone></span><button class="btn mini ghost" data-act="clear" data-key="${m.key}" title="Clear this reading" aria-label="Clear ${m.label}">clear</button></div>
+        <button class="step" data-act="step" data-key="${m.key}" data-d="1" aria-label="+ ${mLabel(m)}">+</button></div>
+      <div class="tfoot"><span class="unit">${m.unit}</span><span class="zone" data-zone></span><button class="btn mini ghost" data-act="clear" data-key="${m.key}" title="${tt('clear')}" aria-label="${tt('clear')} ${mLabel(m)}">${tt('clear')}</button></div>
       <div class="mmsg" id="msg-${m.key}"></div>
     </div>`;
   el.innerHTML = `
   <div id="sumbar" class="sumbar" aria-live="polite"></div>
   <div class="card"><div class="row" style="justify-content:space-between">
-    <div><h2 style="margin:0"><span id="v-pid">${esc(p.id)}</span></h2><span class="muted">Age ${esc(p.age)} · visit #${p.visits.length + 1}</span></div>
-    <div><label for="in-weeks" class="muted">Weeks</label> <input id="in-weeks" type="number" style="width:90px" min="${WEEKS_BOUNDS[0]}" max="${WEEKS_BOUNDS[1]}" value="${d.weeks ?? ''}"></div></div></div>
+    <div><h2 style="margin:0"><span id="v-pid">${esc(p.id)}</span></h2><span class="muted">${tt('age_w')} ${esc(p.age)} · ${tt('visitn')} #${p.visits.length + 1}</span></div>
+    <div><label for="in-weeks" class="muted">${tt('weeks')}</label> <input id="in-weeks" type="number" style="width:90px" min="${WEEKS_BOUNDS[0]}" max="${WEEKS_BOUNDS[1]}" value="${d.weeks ?? ''}"></div></div></div>
 
   <div class="card">
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Capture vitals</h2>
-      <label class="switch"><input type="checkbox" id="simtoggle" ${S.simOn ? 'checked' : ''}> Demo mode (simulated sensors)</label></div>
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${tt('cap')}</h2>
+      <label class="switch"><input type="checkbox" id="simtoggle" ${S.simOn ? 'checked' : ''}> ${tt('demo')}</label></div>
     <div class="row" style="margin-top:10px">
-      <button class="btn" data-act="ble-connect" ${bleSupported() ? '' : 'title="Web Bluetooth not supported in this browser"'}>Connect Bluetooth</button>
+      <button class="btn" data-act="ble-connect" ${bleSupported() ? '' : 'title="Web Bluetooth not supported in this browser"'}>${tt('ble')}</button>
+      <button class="btn" data-act="voice" id="voicebtn" title="Speak vitals and danger-sign answers (uses your browser speech service)">${tt('voice')}</button>
       <span id="simpanel" class="row" ${S.simOn ? '' : 'hidden'}>
-        <button class="btn primary" data-act="sim-all">Capture all vitals</button>
-        <button class="btn" data-act="sim-watch" id="watchbtn">${S.sim.streaming ? 'Stop live stream' : 'Start live stream'}</button>
-        <button class="btn ghost" data-act="sim-glitch" title="Emit an impossible value to demonstrate the plausibility check">Inject glitch</button>
+        <button class="btn primary" data-act="sim-all">${tt('capall')}</button>
+        <button class="btn" data-act="sim-watch" id="watchbtn">${S.sim.streaming ? tt('lstop') : tt('lstart')}</button>
+        <button class="btn ghost" data-act="sim-glitch" title="Emit an impossible value to demonstrate the plausibility check">${tt('glitch')}</button>
       </span>
     </div>
-    <p class="muted" id="bletxt">${S.ble ? `Connected: ${esc(S.ble.name)} · live: ${esc(S.ble.found.join(', ') || 'none')}` : bleSupported() ? '' : 'Bluetooth unavailable in this browser'}</p>
+    <p class="muted" style="font-size:.78rem">${tt('voice_note')}</p><p class="muted" id="bletxt">${S.ble ? `Connected: ${esc(S.ble.name)} · live: ${esc(S.ble.found.join(', ') || 'none')}` : bleSupported() ? '' : 'Bluetooth unavailable in this browser'}</p>
     <div class="log" id="devlog" aria-live="polite">${esc(S.log.join('\n'))}</div>
   </div>
 
-  <div class="card"><h2 style="margin-bottom:2px">Vitals</h2>
+  <div class="card"><h2 style="margin-bottom:2px">${tt('vitals')}</h2>
     <div class="tiles">${METRICS.map(row).join('')}</div></div>
 
-  <div class="card"><h3>Danger symptoms</h3>
-    ${SYMPTOMS.map(s => `<div class="sym"><span id="sl-${s.key}">${s.label}</span><div class="seg" role="group" aria-labelledby="sl-${s.key}">
-      <button class="yes" data-act="sym" data-key="${s.key}" data-val="true">Yes</button><button class="no" data-act="sym" data-key="${s.key}" data-val="false">No</button><button class="na" data-act="sym" data-key="${s.key}" data-val="null">Not asked</button></div></div>`).join('')}
+  <div class="card"><h3>${tt('danger')}</h3>
+    ${SYMPTOMS.map(s => `<div class="sym"><span id="sl-${s.key}">${sLabel(s)}</span><div class="seg" role="group" aria-labelledby="sl-${s.key}">
+      <button class="yes" data-act="sym" data-key="${s.key}" data-val="true">${tt('yes')}</button><button class="no" data-act="sym" data-key="${s.key}" data-val="false">${tt('no')}</button><button class="na" data-act="sym" data-key="${s.key}" data-val="null">${tt('na')}</button></div></div>`).join('')}
+  </div>
+
+  <div class="card"><h3>${tt('ctx_t')} <span class="muted">${tt('ctx_note')}</span></h3>
+    <div class="grid2">
+      <div><label for="ctx-protein">${tt('ctx_prot')}</label><select id="ctx-protein"><option value="">${tt('not_tested')}</option>${['neg', 'trace', '1+', '2+', '3+'].map(x => `<option value="${x}" ${d.ctx.protein === x ? 'selected' : ''}>${x === 'neg' ? tt('neg') : x === 'trace' ? tt('trace') : x}</option>`).join('')}</select></div>
+      <div class="row"><div style="flex:1"><label for="ctx-weight">${tt('ctx_w')}</label><input id="ctx-weight" type="number" inputmode="decimal" value="${d.ctx.weight ?? ''}"></div><div style="flex:1"><label for="ctx-height">${tt('ctx_h')}</label><input id="ctx-height" type="number" inputmode="decimal" value="${d.ctx.height ?? ''}"></div></div>
+    </div>
+    <div class="row" style="margin-top:8px">${[['prior_pe', tt('hx_pe')], ['chronic_htn', tt('hx_ht')], ['diabetes', tt('hx_dm')]].map(([k, l]) => `<label class="switch"><input type="checkbox" data-hx="${k}" ${d.ctx.hx[k] ? 'checked' : ''}> ${l}</label>`).join('')}<span class="muted" id="bmi"></span></div>
   </div>
 
   <div id="result"></div>
   <div class="card row">
-    <button class="btn primary" data-act="save-visit" id="savebtn">Save visit</button>
-    <button class="btn" data-act="ref-draft" id="refbtn">Referral message</button>
+    <button class="btn primary" data-act="save-visit" id="savebtn">${tt('save')}</button>
+    <button class="btn" data-act="ref-draft" id="refbtn">${tt('refmsg')}</button>
     <span class="muted" id="savemsg" role="status"></span>
   </div>`;
   refresh();
@@ -222,11 +255,11 @@ function buildVisit() {
 function compute() {
   const p = patient(), d = S.draft, ev = evaluate(d.entries);
   const overrides = METRICS.filter(m => ev.status[m.key] === 'overridden').map(m => m.key);
-  const r = assess({ model: S.model, age: p.age, vals: ev.vals, symptoms: d.symptoms, history: p.visits.map(v => ({ ts: v.ts, vals: v.vals })), blocked: ev.blocked, missing: ev.missing, overrides });
+  const r = assess({ model: S.model, age: p.age, vals: ev.vals, symptoms: d.symptoms, history: p.visits.map(v => ({ ts: v.ts, vals: v.vals })), blocked: ev.blocked, missing: ev.missing, overrides, context: d.ctx });
   return { ev, r, overrides };
 }
 function badgeFor(e, st) {
-  if (e.v == null) return ['none', 'MISSING', 'Not measured'];
+  if (e.v == null) return ['none', tt('missing'), 'Not measured'];
   return [e.src, SRC[e.src].label, SRC[e.src].title];
 }
 function refresh() {
@@ -237,41 +270,42 @@ function refresh() {
   for (const m of METRICS) {
     const row = $(`.mrow[data-key="${m.key}"]`), e = d.entries[m.key], st = ev.status[m.key];
     row.className = 'mrow ' + st + ' z-' + (st === 'invalid' ? 'bad' : zoneOf(m.key, e.v)) + (row._flash ? ' flash' : '');
-    $('[data-zone]', row).textContent = st === 'invalid' ? 'implausible' : ZT[zoneOf(m.key, e.v)] || '';
+    $('[data-zone]', row).textContent = st === 'invalid' ? tt('z_bad') : (zoneOf(m.key, e.v) in ZT ? tt('z_' + zoneOf(m.key, e.v)) : '');
     const b = $('[data-badge]', row), [cls, txt, ttl] = badgeFor(e, st);
     b.className = 'badge ' + cls; b.textContent = txt; b.title = ttl;
     let msg = '';
     if (st === 'invalid' || st === 'overridden') {
-      msg = `<div class="warn ${st === 'overridden' ? 'soft' : ''}" role="alert">${st === 'invalid' ? '⚠ BLOCKED, not used in scoring. ' : '⚠ Overridden. '}${esc(ev.msgs[m.key])}
+      msg = `<div class="warn ${st === 'overridden' ? 'soft' : ''}" role="alert">${st === 'invalid' ? '⚠ ' + tt('blocked') + ' ' : '⚠ ' + tt('overridden') + ' '}${esc(ev.msgs[m.key])}
         ${st === 'overridden' ? `<br>Override reason: <b>${esc(e.override.reason)}</b>` : ''}
-        <div class="row"><button class="btn mini" data-act="reread" data-key="${m.key}">Re-read</button><button class="btn mini" data-act="correct" data-key="${m.key}">Correct value</button>
-        ${st === 'invalid' ? `<button class="btn mini danger" data-act="ov-open" data-key="${m.key}">Override…</button>` : `<button class="btn mini" data-act="ov-remove" data-key="${m.key}">Remove override</button>`}</div>
-        ${d.ovOpen[m.key] && st === 'invalid' ? `<div class="row"><input type="text" id="ovr-${m.key}" placeholder="Reason (required), e.g. confirmed with manual cuff" maxlength="140" style="flex:1 1 220px"><button class="btn mini primary" data-act="ov-confirm" data-key="${m.key}">Accept this value</button></div>` : ''}</div>`;
+        <div class="row"><button class="btn mini" data-act="reread" data-key="${m.key}">${tt('reread')}</button><button class="btn mini" data-act="correct" data-key="${m.key}">${tt('correct')}</button>
+        ${st === 'invalid' ? `<button class="btn mini danger" data-act="ov-open" data-key="${m.key}">${tt('override')}</button>` : `<button class="btn mini" data-act="ov-remove" data-key="${m.key}">${tt('rmov')}</button>`}</div>
+        ${d.ovOpen[m.key] && st === 'invalid' ? `<div class="row"><input type="text" id="ovr-${m.key}" placeholder="Reason (required), e.g. confirmed with manual cuff" maxlength="140" style="flex:1 1 220px"><button class="btn mini primary" data-act="ov-confirm" data-key="${m.key}">${tt('accept')}</button></div>` : ''}</div>`;
     } else if (st === 'missing') msg = '';
     setHtml($(`#msg-${m.key}`), msg);
   }
   for (const s of SYMPTOMS) for (const b of $$(`.seg button[data-key="${s.key}"]`)) b.setAttribute('aria-pressed', String(String(d.symptoms[s.key]) === b.dataset.val));
   setHtml($('#result'), resultHtml(r, ev));
+  { const c = d.ctx; $('#bmi').textContent = c.weight && c.height ? `BMI ${(c.weight / ((c.height / 100) ** 2)).toFixed(1)}` : ''; }
   const have = METRICS.filter(m => d.entries[m.key].v != null).length, asked = SYMPTOMS.filter(x => d.symptoms[x.key] != null).length, tot = METRICS.length + SYMPTOMS.length, pct = Math.round((have + asked) / tot * 100);
-  setHtml($('#sumbar'), `<div class="ring" style="--p:${pct}"><span>${pct}%</span></div><div class="sbtxt"><div class="sbl">Risk now</div><div class="sbv ${r.levelName}">${r.levelName.toUpperCase()}${r.provisional ? ' · provisional' : ''}${r.trend.alert ? ' · trend alert' : ''}</div><div class="muted">${have}/${METRICS.length} vitals · ${asked}/${SYMPTOMS.length} danger-sign answers</div></div>`);
+  setHtml($('#sumbar'), `<div class="ring" style="--p:${pct}"><span>${pct}%</span></div><div class="sbtxt"><div class="sbl">${tt('risk_now')}</div><div class="sbv ${r.levelName}">${lvlU(r.levelName)}${r.provisional ? ' · ' + tt('prov') : ''}${r.trend.alert ? ' · ' + tt('trend_alert') : ''}</div><div class="muted">${tt('vit_count', { a: have, b: METRICS.length, c: asked, d: SYMPTOMS.length })}</div></div>`);
   $('#savebtn').disabled = ev.blocked.length > 0;
-  $('#savemsg').textContent = ev.blocked.length ? 'Fix, re-read or override the blocked reading(s) before saving.' : '';
+  $('#savemsg').textContent = ev.blocked.length ? tt('save_fix') : '';
   $('#refbtn').className = 'btn' + (r.referralEligible ? ' danger' : '');
-  $('#refbtn').textContent = r.referralEligible ? 'Referral message (recommended)' : 'Referral message';
+  $('#refbtn').textContent = r.referralEligible ? tt('refmsg') + ' (' + tt('recommended') + ')' : tt('refmsg');
   $('#refbtn').disabled = !r.referralEligible;
   $('#refbtn').title = r.referralEligible ? '' : 'Available for High risk or a trend alert';
 }
 function resultHtml(r, ev) {
-  const kindTag = { rule: 'SAFETY RULE', model: 'MODEL', trend: 'TREND', missing: 'DATA' };
+  const kindTag = { rule: tt('k_rule'), model: tt('k_model'), trend: tt('k_trend'), missing: tt('k_data') };
   const srcs = sourceBreakdown(S.draft.entries);
   return `<div class="card res ${r.levelName}">
-    <div class="row" style="justify-content:space-between"><div><span class="muted">Risk level</span><div class="big">${r.levelName.toUpperCase()}${r.provisional ? ' <span class="pill Mid">PROVISIONAL</span>' : ''}${r.trend.alert ? ' <span class="pill High">TREND ALERT</span>' : ''}</div></div>
-    <div class="muted" style="text-align:right">${r.modelName ? (r.overridden ? '<span class="pill High">Safety rule / trend overrode the model</span>' : '<span class="pill Low">Model-driven</span>') : ''}<br>${r.modelName ? `Model alone: ${r.modelName}` : 'Model could not run'}</div></div>
-    ${r.missing.length ? `<div class="missbox" role="alert"><b>Missing / unusable (${r.missing.length}):</b> ${r.missing.map(m => esc(m.label) + (m.blocked ? ' [blocked]' : '')).join(', ')}.<br>${esc(r.certaintyText)}</div>` : ``}
-    <h3>Why this level</h3>
-    <ul class="reasons">${r.reasons.filter(x => x.kind !== 'model' || true).map(x => `<li><span class="k ${x.kind}">${kindTag[x.kind]}</span>${esc(x.text)}</li>`).join('') || '<li>No risk factors identified from the data entered.</li>'}</ul>
-    ${r.trend.enough ? `<p class="muted"><b>Trend:</b> ${esc(r.trend.text)}</p>` : ''}
-    <p class="muted"><b>Sources this visit:</b> ${Object.entries(srcs).map(([k, v]) => `${k}: ${v.length ? v.join(', ') : '–'}`).join(' · ')}</p>
+    <div class="row" style="justify-content:space-between"><div><span class="muted">${tt('risk_level')}</span><div class="big">${lvlU(r.levelName)}${r.provisional ? ` <span class="pill Mid">${tt('prov')}</span>` : ''}${r.trend.alert ? ` <span class="pill High">${tt('trend_alert')}</span>` : ''}</div></div>
+    <div class="muted" style="text-align:right">${r.modelName ? (r.overridden ? `<span class="pill High">${tt('overrode')}</span>` : `<span class="pill Low">${tt('model_driven')}</span>`) : ''}<br>${r.modelName ? `${tt('model_alone')}: ${lvlW(r.modelName)}` : tt('model_norun')}</div></div>
+    ${r.missing.length ? `<div class="missbox" role="alert"><b>${tt('miss_title')} (${r.missing.length}):</b> ${r.missing.map(m => esc(hasKey('m_' + m.key) ? tt('m_' + m.key) : m.key === 'age' ? tt('age_w') : m.label) + (m.blocked ? ' [' + tt('blk') + ']' : '')).join(', ')}.<br>${esc(r.certaintyText)}</div>` : ``}
+    <h3>${tt('why')}</h3>
+    <ul class="reasons">${r.reasons.filter(x => x.kind !== 'model' || true).map(x => `<li><span class="k ${x.kind}">${kindTag[x.kind]}</span>${esc(trReason(x))}</li>`).join('') || `<li>${tt('no_factors')}</li>`}</ul>
+    ${r.trend.enough ? `<p class="muted"><b>${tt('trend')}:</b> ${esc(r.trend.text)}</p>` : ''}
+    <p class="muted"><b>${tt('sources')}:</b> ${Object.entries(srcs).map(([k, v]) => `${k}: ${v.length ? v.join(', ') : '–'}`).join(' · ')}</p>
   </div>`;
 }
 
@@ -279,24 +313,24 @@ function resultHtml(r, ev) {
 const ICON = { patient: '+', visit: '●', referral: '↗', delete: '✕' };
 function logHtml() {
   const L = store.logs().slice(0, 40);
-  return L.length ? `<ul class="log2">${L.map(l => `<li class="${l.type}"><span class="ic">${ICON[l.type] || '•'}</span><span class="tx">${esc(l.text)}</span><time>${esc(fmtTime(l.ts))}</time></li>`).join('')}</ul>` : '<p class="muted">Activity appears here as you work.</p>';
+  return L.length ? `<ul class="log2">${L.map(l => `<li class="${l.type}"><span class="ic">${ICON[l.type] || '•'}</span><span class="tx">${esc(l.text)}</span><time>${esc(fmtTime(l.ts))}</time></li>`).join('')}</ul>` : `<p class="muted">${tt('act_empty')}</p>`;
 }
 function renderHistory() {
   const el = $('#tab-history'), p = patient(), list = store.patients();
-  const picker = list.length ? `<label for="hpick" class="muted">Patient</label> <select id="hpick" style="width:auto">${list.map(x => `<option value="${esc(x.id)}" ${p && x.id === p.id ? 'selected' : ''}>${esc(x.id)} · ${x.visits.length} visit(s)</option>`).join('')}</select>` : '';
-  const activity = `<div class="card"><h2>Activity log</h2>${logHtml()}</div>`;
-  if (!p) { el.innerHTML = `<div class="card row" style="justify-content:space-between"><h2 style="margin:0">History</h2><div>${picker}</div></div>${activity}`; return; }
+  const picker = list.length ? `<label for="hpick" class="muted">${tt('s_patient')}</label> <select id="hpick" style="width:auto">${list.map(x => `<option value="${esc(x.id)}" ${p && x.id === p.id ? 'selected' : ''}>${esc(x.id)} · ${x.visits.length} ${tt('stat_v')}</option>`).join('')}</select>` : '';
+  const activity = `<div class="card"><h2>${tt('h_activity')}</h2>${logHtml()}</div>`;
+  if (!p) { el.innerHTML = `<div class="card row" style="justify-content:space-between"><h2 style="margin:0">${tt('n_hist')}</h2><div>${picker}</div></div>${activity}`; return; }
   const v = p.visits;
-  const cell = (visit, k) => { const e = visit.entries[k]; return e?.v == null ? '<span class="badge none">MISSING</span>' : `${fmtNum(e.v, M[k].dp)} <span class="badge ${e.src}" title="${esc(SRC[e.src].title)}">${SRC[e.src].label}</span>${visit.status[k] === 'overridden' ? ' <span class="pill Mid">override</span>' : ''}`; };
+  const cell = (visit, k) => { const e = visit.entries[k]; return e?.v == null ? `<span class="badge none">${tt('missing')}</span>` : `${fmtNum(e.v, M[k].dp)} <span class="badge ${e.src}" title="${esc(SRC[e.src].title)}">${SRC[e.src].label}</span>${visit.status[k] === 'overridden' ? ' <span class="pill Mid">override</span>' : ''}`; };
   el.innerHTML = `<div class="card row" style="justify-content:space-between"><h2 style="margin:0">${esc(p.id)}</h2><div>${picker}</div></div>
-  <div class="card"><h3>Blood pressure across visits</h3>${bpChart(v.map((x, i) => ({ label: `V${i + 1}${x.weeks ? ' · ' + x.weeks + 'w' : ''}`, sbp: x.vals.sbp, dbp: x.vals.dbp })))}
-    ${v.length ? `<p><b>Trend:</b> ${esc(v.at(-1).risk.trend.text)} ${v.at(-1).risk.trend.alert ? '<span class="pill High">ALERT</span>' : ''}</p>` : ''}</div>
+  <div class="card"><h3>${tt('h_bp')}</h3>${bpChart(v.map((x, i) => ({ label: `V${i + 1}${x.weeks ? ' · ' + x.weeks + 'w' : ''}`, sbp: x.vals.sbp, dbp: x.vals.dbp })))}
+    ${v.length ? `<p><b>${tt('trend')}:</b> ${esc(v.at(-1).risk.trend.text)} ${v.at(-1).risk.trend.alert ? `<span class="pill High">${tt('alert')}</span>` : ''}</p>` : ''}</div>
   ${activity}
-  <div class="card"><h3>Visits</h3>${v.length ? `<div class="tablewrap"><table><thead><tr><th>#</th><th>Time</th><th>Risk</th>${METRICS.map(m => `<th>${m.label} (${m.unit})</th>`).join('')}<th>Symptoms</th><th></th></tr></thead><tbody>
-    ${v.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(fmtTime(x.ts))}</td><td>${riskPill(x.risk)}${x.risk.trend.alert ? ' <span class="pill Mid">trend</span>' : ''}</td>${METRICS.map(m => `<td>${cell(x, m.key)}</td>`).join('')}
-    <td>${SYMPTOMS.map(s => `${s.label.split(' ')[0]} ${x.symptoms[s.key] === true ? 'YES' : x.symptoms[s.key] === false ? 'no' : '?'}`).join(', ')}</td>
-    <td>${x.risk.referralEligible ? `<button class="btn mini danger" data-act="ref-visit" data-i="${i}">Referral</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No saved visits yet.</p>'}</div>
-  <div class="card"><button class="btn" data-act="open" data-pid="${esc(p.id)}">New visit</button></div>`;
+  <div class="card"><h3>${tt('h_visits')}</h3>${v.length ? `<div class="tablewrap"><table><thead><tr><th>#</th><th>${tt('time')}</th><th>${tt('risk_level')}</th>${METRICS.map(m => `<th>${mLabel(m)} (${m.unit})</th>`).join('')}<th>${tt('danger')}</th><th></th></tr></thead><tbody>
+    ${v.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(fmtTime(x.ts))}</td><td>${riskPill(x.risk)}${x.risk.trend.alert ? ` <span class="pill Mid">${tt('trend_alert')}</span>` : ''}</td>${METRICS.map(m => `<td>${cell(x, m.key)}</td>`).join('')}
+    <td>${SYMPTOMS.map(s => `${sLabel(s).split(' ')[0]} ${x.symptoms[s.key] === true ? tt('yes') : x.symptoms[s.key] === false ? tt('no') : '?'}`).join(', ')}</td>
+    <td>${x.risk.referralEligible ? `<button class="btn mini danger" data-act="ref-visit" data-i="${i}">Referral</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<p class="muted">${tt('no_saved')}</p>`}</div>
+  <div class="card row"><button class="btn" data-act="open" data-pid="${esc(p.id)}">${tt('h_new')}</button><button class="btn" data-act="print-summary">${tt('h_print')}</button></div>`;
 }
 
 /* ---------- referral ---------- */
@@ -305,6 +339,26 @@ function openReferral(text) {
   $('#reftext').value = text; $('#refnote').textContent = '';
   $('#refshare').hidden = !navigator.share;
   $('#refdlg').showModal(); $('#reftext').focus(); $('#reftext').select();
+}
+
+/* ---------- print + voice ---------- */
+function printText(title, text) {
+  const pa = $('#printarea'); pa.innerHTML = `<h1>${esc(title)}</h1><pre>${esc(text)}</pre>`;
+  const done = () => { pa.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done); print();
+}
+let rec = null;
+function startVoice(btn) {
+  if (!voiceSupported()) { log('Voice entry needs Chrome or Edge (speech recognition).'); return; }
+  if (rec) { rec.stop(); return; }
+  btn.classList.add('listening'); log('Listening… say e.g. "blood pressure 120 over 80, heart rate 82, headache no".');
+  const lang = 'en-IN'; // the spoken-vitals parser understands English phrases only
+  rec = listen(lang, text => {
+    const r = parseSpeech(text), got = [];
+    for (const [k, v] of Object.entries(r.metrics)) { setReading(k, v, 'manual_entry'); got.push(`${M[k].label} ${v}`); }
+    for (const [k, v] of Object.entries(r.symptoms)) { S.draft.symptoms[k] = v; got.push(`${SYMPTOMS.find(s => s.key === k).label}: ${v ? 'yes' : 'no'}`); }
+    refresh(); log(`Heard: “${text}”`); log(got.length ? `Applied: ${got.join(', ')}` : 'Nothing recognised. Try again, e.g. “bp 120 over 80”.');
+  }, err => { rec = null; btn.classList.remove('listening'); if (err && err !== 'no-speech' && err !== 'aborted') log(`Voice error: ${err}`); });
 }
 
 /* ---------- actions ---------- */
@@ -344,7 +398,7 @@ function saveVisit() {
   if (!METRICS.some(m => d.entries[m.key].v != null) && SYMPTOMS.every(s => d.symptoms[s.key] == null)) { $('#savemsg').textContent = 'Nothing to save yet: enter or capture at least one reading.'; return; }
   S.sim.stopWatch();
   const visit = { id: crypto.randomUUID?.() || String(Math.random()), ts: nowIso(), weeks: d.weeks, age: p.age, consentTs: p.consent.ts,
-    entries: JSON.parse(JSON.stringify(d.entries)), status: ev.status, vals: ev.vals, symptoms: { ...d.symptoms }, risk: r, overrides };
+    entries: JSON.parse(JSON.stringify(d.entries)), status: ev.status, vals: ev.vals, symptoms: { ...d.symptoms }, context: JSON.parse(JSON.stringify(d.ctx)), risk: r, overrides };
   store.addVisit(p.id, visit);
   store.addLog('visit', p.id, `Visit #${p.visits.length} saved: ${r.levelName.toUpperCase()}${r.provisional ? ' (provisional)' : ''}${r.trend.alert ? ' + trend alert' : ''}${visit.vals.sbp != null ? `, BP ${visit.vals.sbp}/${visit.vals.dbp}` : ', BP not measured'}${r.missing.length ? `, ${r.missing.length} missing` : ''}`);
   S.draft = null; showTab('history');
@@ -355,6 +409,8 @@ function wireEvents() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
   document.addEventListener('change', e => {
     const t = e.target;
+    if (t.id === 'ctx-protein' && S.draft) { S.draft.ctx.protein = t.value || null; refresh(); }
+    if (t.dataset?.hx && S.draft) { S.draft.ctx.hx[t.dataset.hx] = t.checked; refresh(); }
     if (t.id === 'hpick') { S.pid = t.value; store.setLast(S.pid); renderHistory(); }
     if (t.id === 'np-consent') { S.flow.consent = t.checked; $('#flow-next').disabled = !t.checked; }
     if (t.id === 'simtoggle') { S.simOn = t.checked; if (!S.simOn) { S.sim.stopWatch(); } simSetup(null); $('#simpanel').hidden = !S.simOn; $('#watchbtn').textContent = 'Start live stream'; log(S.simOn ? 'Demo mode ON: sensors are simulated.' : 'Demo mode OFF.'); }
@@ -366,6 +422,7 @@ function wireEvents() {
       S.draft.entries[t.dataset.key] = { v: Number.isNaN(v) ? null : v, src: v == null || Number.isNaN(v) ? null : 'manual_entry' };
       refresh();
     }
+    if ((t.id === 'ctx-weight' || t.id === 'ctx-height') && S.draft) { S.draft.ctx[t.id.slice(4)] = t.value === '' ? null : parseFloat(t.value); refresh(); }
     if (t.id === 'np-age') S.flow.age = t.value;
     if (t.id === 'in-weeks' && S.draft) S.draft.weeks = t.value === '' ? null : parseInt(t.value, 10);
   });
@@ -411,10 +468,15 @@ function wireEvents() {
         case 'sim-glitch': { const g = S.sim.glitch(); log(`Injected glitch: ${g[0]} = ${g[1]}`); break; }
         case 'save-visit': saveVisit(); break;
         case 'ref-draft': { const p = patient(), { ev, r, overrides } = compute();
-          openReferral(buildReferral({ patientId: p.id, age: p.age, visit: { ts: nowIso(), weeks: d.weeks, entries: d.entries, status: ev.status, symptoms: d.symptoms }, risk: r })); break; }
+          openReferral(buildReferral({ patientId: p.id, age: p.age, visit: { ts: nowIso(), weeks: d.weeks, entries: d.entries, status: ev.status, symptoms: d.symptoms, context: d.ctx }, risk: r })); break; }
         case 'ref-visit': { const p = patient(), v = p.visits[+b.dataset.i]; openReferral(buildReferral({ patientId: p.id, age: p.age, visit: v, risk: v.risk })); break; }
         case 'ref-copy': { const t = $('#reftext'); t.select(); try { await navigator.clipboard.writeText(t.value); $('#refnote').textContent = 'Copied.'; } catch { document.execCommand?.('copy'); $('#refnote').textContent = 'Selected: press Ctrl/Cmd+C to copy.'; } break; }
         case 'ref-share': try { await navigator.share({ title: 'MamaGuard referral', text: $('#reftext').value }); } catch {} break;
+        case 'ref-wa': window.open('https://wa.me/?text=' + encodeURIComponent($('#reftext').value), '_blank', 'noopener'); break;
+        case 'ref-sms': location.href = 'sms:?&body=' + encodeURIComponent($('#reftext').value); break;
+        case 'ref-print': printText('MamaGuard referral', $('#reftext').value); break;
+        case 'print-summary': printText('MamaGuard patient summary', patientSummary(patient())); break;
+        case 'voice': startVoice(b); break;
         case 'ref-close': $('#refdlg').close(); break;
       }
     } catch (err) { console.error(err); const m = $('#np-msg') || $('#savemsg'); if (m) { m.hidden = false; m.textContent = err.message; } }
