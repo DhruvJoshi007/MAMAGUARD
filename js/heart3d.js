@@ -1,7 +1,7 @@
 // Interactive 3D heart (no libraries). ~1300 evenly spaced points on the exact implicit heart surface, lit per point,
 // with a lub-dub heartbeat that ripples up the surface, a pulsing glow, shockwave rings, and pointer-follow with inertia.
 // Drag to spin; it speeds up and tints with live risk. Respects reduced motion.
-let raf = 0, canvas = null, pts = null, ang = 0, angV = 0, vel = 0, drag = null, tilt = 0.08, tiltT = 0.08, col = [225, 29, 72], frames = 0, stopped = true, hov = { x: 0, y: 0 }, rings = [], lastBeat = -1;
+let ctr = { x: 0, y: 0 }, raf = 0, canvas = null, pts = null, ang = 0, angV = 0, vel = 0, drag = null, tilt = 0.08, tiltT = 0.08, col = [225, 29, 72], frames = 0, stopped = true, hov = { x: 0, y: 0 }, rings = [], lastBeat = -1;
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const f = (x, y, z) => Math.pow(x * x + 2.25 * y * y + z * z - 1, 3) - x * x * z * z * z - 0.1125 * y * y * z * z * z; // z is the vertical axis here
 function build() {
@@ -43,6 +43,8 @@ function build() {
     const n = Math.hypot(x, y, z) || 1;
     out.push({ x, y: z * .9, z: y, nx: x / n, ny: z / n, nz: y / n, ph: Math.random() * 6.283, inner: true });
   }
+  let x0 = 9, x1 = -9, y0 = 9, y1 = -9; for (const q of out) { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+  ctr = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };   // visual centre, so glow and rings sit exactly on the heart
   return (pts = out);
 }
 function readColor() {
@@ -57,37 +59,36 @@ function draw(t) {
   const period = 950, p = (t / period) % 1;
   const lub = Math.exp(-Math.pow((p - .08) * 13, 2)), dub = .6 * Math.exp(-Math.pow((p - .27) * 13, 2)), beat = lub + dub;
   const bi = Math.floor(t / period); if (bi !== lastBeat) { lastBeat = bi; rings.push({ t0: t }); if (rings.length > 3) rings.shift(); }
-  const S = Math.min(w, h) * .3 * (1 + .075 * beat), cx = w / 2, cy = h / 2 + h * .02;
+  const S = Math.min(w, h) * .3 * (1 + .075 * beat), cx = w / 2, cy = h / 2;
   const [r, g, b] = col;
   // glow behind
   const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 2.1); gr.addColorStop(0, `rgba(${r},${g},${b},${.22 + .3 * beat})`); gr.addColorStop(.5, `rgba(${r},${g},${b},${.07 + .08 * beat})`); gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
   ctx.fillStyle = gr; ctx.fillRect(0, 0, w, h);
-  // shockwave rings
-  for (const rg of rings) { const a = (t - rg.t0) / 1100; if (a > 1) continue; ctx.strokeStyle = `rgba(${r},${g},${b},${(1 - a) * .35})`; ctx.lineWidth = 2 * (1 - a) + .5; ctx.beginPath(); ctx.ellipse(cx, cy, S * (1.1 + a * 1.1), S * (1.1 + a * 1.1) * .92, 0, 0, 6.283); ctx.stroke(); }
-  const ca = Math.cos(ang), sa = Math.sin(ang), ct = Math.cos(tilt), st = Math.sin(tilt), L = [-.45, .6, .65], ln = Math.hypot(...L);
+  // shockwave rings: circles centred on the heart, growing but always inside the canvas
+  const maxR = Math.min(w, h) / 2 - 3, r0 = Math.min(S * 1.05, maxR * .8);
+  for (const rg of rings) { const a = (t - rg.t0) / 1300; if (a > 1) continue; const rr = r0 + (maxR - r0) * a; ctx.strokeStyle = `rgba(${r},${g},${b},${(1 - a) * (1 - a) * .4})`; ctx.lineWidth = 2.2 * (1 - a) + .6; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, 6.283); ctx.stroke(); }
+  const ca = Math.cos(ang), sa = Math.sin(ang), ct = Math.cos(tilt), st = Math.sin(tilt), L = [-.5, .65, .6], ln = Math.hypot(...L);
   const P = pts.map(q => {
     const wave = Math.max(0, lub * Math.exp(-Math.pow((q.y + 1 - p * 0) * .0, 2))) ; // base pulse
     const trav = Math.exp(-Math.pow((((t / period) % 1) - .08 - (q.y + 1.1) * .06) * 11, 2)); // pulse travelling up the surface
     const sh = 1 + .035 * Math.sin(t / 700 + q.ph) + .06 * trav + .02 * wave;
-    const x = q.x * sh, y = q.y * sh, z = q.z * sh;
+    const x = (q.x - ctr.x) * sh, y = (q.y - ctr.y) * sh, z = q.z * sh;
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca, y1 = y * ct - z1 * st, z2 = y * st + z1 * ct, k = 3 / (3 + z2);
     let nx = q.nx * ca + q.nz * sa, nz = -q.nx * sa + q.nz * ca, ny = q.ny * ct - nz * st; nz = q.ny * st + nz * ct;
     const dif = Math.max(0, (nx * L[0] + ny * L[1] + nz * -L[2]) / ln), rim = Math.pow(1 - Math.abs(nz), 3);
     return [cx + x1 * S * k, cy - y1 * S * k, z2, k, dif, rim, trav, q.inner];
   }).sort((a, b2) => b2[2] - a[2]);
-  ctx.globalCompositeOperation = 'lighter';
   for (const [px, py, pz, k, dif, rim, trav, inner] of P) {
-    const depth = 1 - (pz + 1.4) / 2.8, lum = Math.min(1, .25 + .55 * dif + .35 * rim + .35 * trav), a = Math.max(.1, Math.min(.95, (.2 + .55 * depth) * (.55 + lum)));
-    const cr = lerp(r, 255, lum * .55), cg = lerp(g, 200, lum * .35), cb = lerp(b, 210, lum * .35);
-    ctx.fillStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${a})`;
-    ctx.beginPath(); ctx.arc(px, py, (inner ? .9 + 1.1 * k * k : 1 + 1.5 * k * k) * (1 + .5 * trav), 0, 6.283); ctx.fill();
+    const front = 1 - (pz + 1.5) / 3, lit = (.42 + .6 * dif) * (.5 + .6 * front) + .25 * trav, spec = Math.pow(dif, 10) * .7 * front + .35 * rim * (inner ? 0 : 1) * dif;
+    const cr = Math.min(255, r * lit * 1.1 + 255 * spec), cg = Math.min(255, g * lit * 1.1 + 200 * spec), cb = Math.min(255, b * lit * 1.1 + 205 * spec);
+    ctx.fillStyle = `rgb(${cr | 0},${cg | 0},${cb | 0})`;
+    ctx.beginPath(); ctx.arc(px, py, (inner ? 1.4 + 1.6 * k * k : 1.7 + 1.8 * k * k) * (1 + .4 * trav), 0, 6.283); ctx.fill();
   }
-  ctx.globalCompositeOperation = 'source-over';
 }
 function loop(t) {
   if (stopped) return;
   if (!canvas.isConnected) { stopped = true; return; }
-  if (!drag) { ang += (0 - ang) * .08; tilt += (.08 - tilt) * .08; }   // hold still facing front; a drag springs back
+  if (!drag) { ang += (hov.x * .45 - ang) * .07; tilt += (.06 + hov.y * .3 - tilt) * .07; }   // hold still facing front; a drag springs back
   if (++frames % 90 === 0) readColor();
   draw(t); raf = requestAnimationFrame(loop);
 }
