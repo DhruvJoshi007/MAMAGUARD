@@ -26,6 +26,7 @@ function zoneOf(k, v) {
     bs: v >= 11.1 ? 'alert' : v > 7.8 ? 'watch' : 'ok', temp: v >= 38 ? 'alert' : v > 37.5 || v < 36 ? 'watch' : 'ok' }[k];
   return z || 'none';
 }
+const BLE_HINT = 'Smartwatches such as Amazfit only appear in the list while they advertise. Close the Zepp app / turn off the phone’s Bluetooth link to the watch, then turn on heart-rate broadcast in the watch or Zepp settings if your model has it. Many Amazfit models use a private protocol and cannot be read by a web page at all; in that case use manual or voice entry.';
 const patient = () => store.getPatient(S.pid);
 const mLabel = m => hasKey('m_' + m.key) ? tt('m_' + m.key) : m.label;
 const sLabel = s => hasKey('y_' + s.key) ? tt('y_' + s.key) : s.label;
@@ -474,8 +475,8 @@ function wireEvents() {
           d.entries[key].override = { reason: r, ts: nowIso() }; d.ovOpen[key] = false; refresh(); break; }
         case 'ov-remove': delete d.entries[key].override; refresh(); break;
         case 'ble-connect':
-          try { S.ble = await connectBle((k, v) => { if (M[k]) setReading(k, v, 'ble_device'); }, log); log(`Connected to ${S.ble.name}.`); buildVisit(); }
-          catch (err) { log('Bluetooth: ' + err.message); }
+          try { S.ble = await connectBle((k, v) => { if (M[k]) setReading(k, v, 'ble_device'); }, log); log(`Connected to ${S.ble.name}.`); if (!S.ble.found.length) log('Connected, but this device exposes no standard health service (heart rate, BP, temp, glucose, SpO₂), so nothing can stream. ' + BLE_HINT); buildVisit(); }
+          catch (err) { log('Bluetooth: ' + err.message); if (err.name === 'NotFoundError') log(BLE_HINT); }
           break;
         case 'sim-watch': if (S.sim.streaming) { S.sim.stopWatch(); b.textContent = 'Start live stream'; log('Live stream stopped.'); } else { S.sim.startWatch(); b.textContent = 'Stop live stream'; log('Live stream started.'); } break;
         case 'sim-meas': await runMeasure(b.dataset.kind); break;
