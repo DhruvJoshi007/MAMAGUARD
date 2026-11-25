@@ -1,0 +1,362 @@
+{
+  "dataset": "UCI Maternal Health Risk (id 863), CC BY 4.0",
+  "dataset_facts": {
+    "rows": 1014,
+    "exact_duplicate_rows": 562,
+    "unique_rows_used": 452,
+    "unique_feature_vectors": 416,
+    "feature_vectors_with_conflicting_labels": 35,
+    "class_counts": {
+      "low risk": 406,
+      "mid risk": 336,
+      "high risk": 272
+    },
+    "class_counts_after_dedup": {
+      "low risk": 234,
+      "mid risk": 106,
+      "high risk": 112
+    }
+  },
+  "protocol": "5-fold StratifiedGroupKFold on the 452 de-duplicated rows (identical feature vectors share a fold), scaler inside the per-fold pipeline, repeated over seeds [0, 1, 2, 3, 4]; metrics are out-of-fold, mean \u00b1 std over seeds. Confusion matrices are summed over the 5 repeats. 'Naive' = plain StratifiedKFold on all 1014 rows with duplicates kept: it leaks and is shown only for contrast.",
+  "selection_rule": "highest mean High-risk recall among models with High-risk precision >= 0.60 and macro-F1 within 0.05 of the best; ties within 0.01 recall go to higher macro-F1.",
+  "chosen_model": "random_forest",
+  "labels_order": [
+    "Low",
+    "Mid",
+    "High"
+  ],
+  "results": {
+    "logistic_regression": {
+      "grouped_cv": {
+        "metrics": {
+          "accuracy": {
+            "mean": 0.5912,
+            "std": 0.0081
+          },
+          "macro_f1": {
+            "mean": 0.5599,
+            "std": 0.0096
+          },
+          "weighted_f1": {
+            "mean": 0.6023,
+            "std": 0.0076
+          },
+          "high_recall": {
+            "mean": 0.6625,
+            "std": 0.0154
+          },
+          "high_precision": {
+            "mean": 0.6688,
+            "std": 0.0158
+          },
+          "high_f1": {
+            "mean": 0.6655,
+            "std": 0.0114
+          },
+          "mid_recall": {
+            "mean": 0.3472,
+            "std": 0.021
+          },
+          "low_recall": {
+            "mean": 0.6675,
+            "std": 0.0095
+          }
+        },
+        "confusion_matrix_summed_over_seeds": [
+          [
+            781,
+            323,
+            66
+          ],
+          [
+            228,
+            184,
+            118
+          ],
+          [
+            38,
+            151,
+            371
+          ]
+        ]
+      },
+      "plain_cv_optimistic": {
+        "metrics": {
+          "accuracy": {
+            "mean": 0.6061,
+            "std": 0.0056
+          },
+          "macro_f1": {
+            "mean": 0.609,
+            "std": 0.0051
+          },
+          "weighted_f1": {
+            "mean": 0.6032,
+            "std": 0.0054
+          },
+          "high_recall": {
+            "mean": 0.7632,
+            "std": 0.005
+          },
+          "high_precision": {
+            "mean": 0.7295,
+            "std": 0.0032
+          },
+          "high_f1": {
+            "mean": 0.746,
+            "std": 0.0031
+          },
+          "mid_recall": {
+            "mean": 0.4167,
+            "std": 0.0078
+          },
+          "low_recall": {
+            "mean": 0.6576,
+            "std": 0.0058
+          }
+        },
+        "confusion_matrix_summed_over_seeds": [
+          [
+            1335,
+            611,
+            84
+          ],
+          [
+            679,
+            700,
+            301
+          ],
+          [
+            58,
+            264,
+            1038
+          ]
+        ]
+      }
+    },
+    "random_forest": {
+      "grouped_cv": {
+        "metrics": {
+          "accuracy": {
+            "mean": 0.7058,
+            "std": 0.0075
+          },
+          "macro_f1": {
+            "mean": 0.6377,
+            "std": 0.01
+          },
+          "weighted_f1": {
+            "mean": 0.687,
+            "std": 0.0083
+          },
+          "high_recall": {
+            "mean": 0.8107,
+            "std": 0.0131
+          },
+          "high_precision": {
+            "mean": 0.73,
+            "std": 0.0099
+          },
+          "high_f1": {
+            "mean": 0.7682,
+            "std": 0.0091
+          },
+          "mid_recall": {
+            "mean": 0.2792,
+            "std": 0.0185
+          },
+          "low_recall": {
+            "mean": 0.8487,
+            "std": 0.0084
+          }
+        },
+        "confusion_matrix_summed_over_seeds": [
+          [
+            993,
+            133,
+            44
+          ],
+          [
+            258,
+            148,
+            124
+          ],
+          [
+            44,
+            62,
+            454
+          ]
+        ]
+      },
+      "plain_cv_optimistic": {
+        "metrics": {
+          "accuracy": {
+            "mean": 0.7722,
+            "std": 0.0062
+          },
+          "macro_f1": {
+            "mean": 0.7759,
+            "std": 0.0064
+          },
+          "weighted_f1": {
+            "mean": 0.7711,
+            "std": 0.0064
+          },
+          "high_recall": {
+            "mean": 0.8713,
+            "std": 0.0047
+          },
+          "high_precision": {
+            "mean": 0.8564,
+            "std": 0.0111
+          },
+          "high_f1": {
+            "mean": 0.8637,
+            "std": 0.0055
+          },
+          "mid_recall": {
+            "mean": 0.6595,
+            "std": 0.0123
+          },
+          "low_recall": {
+            "mean": 0.799,
+            "std": 0.0128
+          }
+        },
+        "confusion_matrix_summed_over_seeds": [
+          [
+            1622,
+            369,
+            39
+          ],
+          [
+            412,
+            1108,
+            160
+          ],
+          [
+            60,
+            115,
+            1185
+          ]
+        ]
+      }
+    },
+    "gradient_boosting": {
+      "grouped_cv": {
+        "metrics": {
+          "accuracy": {
+            "mean": 0.7018,
+            "std": 0.0115
+          },
+          "macro_f1": {
+            "mean": 0.6346,
+            "std": 0.0108
+          },
+          "weighted_f1": {
+            "mean": 0.6838,
+            "std": 0.011
+          },
+          "high_recall": {
+            "mean": 0.7339,
+            "std": 0.0067
+          },
+          "high_precision": {
+            "mean": 0.7599,
+            "std": 0.0133
+          },
+          "high_f1": {
+            "mean": 0.7466,
+            "std": 0.0088
+          },
+          "mid_recall": {
+            "mean": 0.2943,
+            "std": 0.0162
+          },
+          "low_recall": {
+            "mean": 0.8709,
+            "std": 0.0161
+          }
+        },
+        "confusion_matrix_summed_over_seeds": [
+          [
+            1019,
+            116,
+            35
+          ],
+          [
+            279,
+            156,
+            95
+          ],
+          [
+            70,
+            79,
+            411
+          ]
+        ]
+      },
+      "plain_cv_optimistic": {
+        "metrics": {
+          "accuracy": {
+            "mean": 0.8,
+            "std": 0.006
+          },
+          "macro_f1": {
+            "mean": 0.8047,
+            "std": 0.006
+          },
+          "weighted_f1": {
+            "mean": 0.8003,
+            "std": 0.0061
+          },
+          "high_recall": {
+            "mean": 0.8728,
+            "std": 0.0124
+          },
+          "high_precision": {
+            "mean": 0.8873,
+            "std": 0.0129
+          },
+          "high_f1": {
+            "mean": 0.8799,
+            "std": 0.0092
+          },
+          "mid_recall": {
+            "mean": 0.7292,
+            "std": 0.0161
+          },
+          "low_recall": {
+            "mean": 0.8099,
+            "std": 0.0141
+          }
+        },
+        "confusion_matrix_summed_over_seeds": [
+          [
+            1644,
+            352,
+            34
+          ],
+          [
+            338,
+            1225,
+            117
+          ],
+          [
+            52,
+            121,
+            1187
+          ]
+        ]
+      }
+    }
+  },
+  "limitations": [
+    "Single-visit, cross-sectional data (rural Bangladesh, IoT monitoring); there are no longitudinal repeat visits, so the 3-visit trend alert is rule-based, not learned.",
+    "Only ~450 unique records after de-duplication: estimates are noisy (see \u00b1 across seeds) and the model is not externally validated.",
+    "No gestational age, proteinuria, SpO2, sleep or stress in the data: those inputs never enter the model.",
+    "Labels are the dataset authors' risk labels, not clinical outcomes; 35 feature vectors have conflicting labels.",
+    "Contains an implausible value (HeartRate = 7) kept as published.",
+    "Decision support only, not a clinical diagnostic system."
+  ]
+}

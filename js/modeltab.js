@@ -1,0 +1,30 @@
+import { esc } from './util.js';
+import { DISCLAIMER } from './config.js';
+let ctgM = null;
+export async function renderModelTab(el, m) {
+  if (!ctgM) { try { ctgM = await (await fetch('js/ctg_metrics.json')).json(); } catch { ctgM = false; } }
+  const pct = x => (x * 100).toFixed(1) + '%';
+  const rows = Object.entries(m.results).map(([k, r]) => { const g = r.grouped_cv.metrics, n = r.plain_cv_optimistic.metrics;
+    return `<tr><td>${esc(k.replace(/_/g, ' '))}${k === m.chosen_model ? ' <b>(shipped)</b>' : ''}</td><td>${pct(g.accuracy.mean)}</td><td>${pct(g.macro_f1.mean)}</td><td>${pct(g.weighted_f1.mean)}</td><td><b>${pct(g.high_recall.mean)}</b> ±${(g.high_recall.std * 100).toFixed(1)}</td><td>${pct(g.high_precision.mean)}</td><td>${pct(g.high_f1.mean)}</td><td class="muted">${pct(n.accuracy.mean)} / ${pct(n.high_recall.mean)}</td></tr>`; }).join('');
+  const cm = (mat, labels) => `<table class="cm"><thead><tr><th>actual \\ predicted</th>${labels.map(l => `<th>${l}</th>`).join('')}<th>recall</th></tr></thead><tbody>${mat.map((r, i) => { const t = r.reduce((a, b) => a + b, 0); return `<tr><th>${labels[i]}</th>${r.map((v, j) => `<td class="${i === j ? 'diag' : ''}">${v}</td>`).join('')}<td>${pct(r[i] / t)}</td></tr>`; }).join('')}</tbody></table>`;
+  const shipped = m.results[m.chosen_model].grouped_cv.confusion_matrix_summed_over_seeds;
+  const f = m.dataset_facts;
+  const hi = shipped[2].reduce((a, b) => a + b, 0), tp = shipped[2][2], fn = hi - tp, fp = shipped[0][2] + shipped[1][2], tn = shipped[0].concat(shipped[1]).reduce((a, b) => a + b, 0) - fp;
+  el.innerHTML = `
+  <div class="card"><h2>Model &amp; evaluation (real cross-validated metrics)</h2>
+    <p><b>Data:</b> UCI Maternal Health Risk (id 863, CC BY 4.0): ${f.rows} rows (${f.unique_rows_used} unique after removing duplicates), features Age, SystolicBP, DiastolicBP, BS, BodyTemp, HeartRate → Low / Mid / High. Classes: ${Object.entries(f.class_counts).map(([k, v]) => `${k} ${v}`).join(', ')} (after de-duplication: ${Object.entries(f.class_counts_after_dedup).map(([k, v]) => `${k} ${v}`).join(', ')}).</p>
+    <p class="warn soft"><b>Data caveat:</b> ${f.exact_duplicate_rows} of ${f.rows} rows are exact duplicates (only ${f.unique_feature_vectors} unique feature vectors) and ${f.feature_vectors_with_conflicting_labels} vectors carry conflicting labels. Leaving them in lets copies of one record sit in both train and test and inflates scores (last column). The headline numbers drop exact duplicates, keep identical feature vectors in one fold, and fit the scaler inside each fold.</p>
+    <div class="tablewrap"><table><thead><tr><th>Model</th><th>Accuracy</th><th>Macro F1</th><th>Weighted F1</th><th>High recall</th><th>High precision</th><th>High F1</th><th>Naive (leaky) acc / High recall</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted">${esc(m.protocol)}</p>
+    <p class="muted"><b>Selection:</b> ${esc(m.selection_rule)}</p><h3>Confusion matrix: shipped ${esc(m.chosen_model.replace(/_/g, ' '))} (out-of-fold, summed over 5 repeats)</h3>
+    <div class="tablewrap">${cm(shipped, m.labels_order)}</div>
+    <p>The model alone catches ${pct(m.results[m.chosen_model].grouped_cv.metrics.high_recall.mean)} of truly High-risk records; ${pct(1 - m.results[m.chosen_model].grouped_cv.metrics.high_recall.mean)} are missed (${pct(shipped[2][0] / shipped[2].reduce((a, b) => a + b, 0))} labelled Low, ${pct(shipped[2][1] / shipped[2].reduce((a, b) => a + b, 0))} labelled Mid). That is exactly why the hard safety rules (BP ≥160/110, danger signs with raised BP, etc.) sit on top and can only raise risk.</p>
+    <ul>${m.limitations.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    <p class="muted">Reproduce: <code>python ml/train_eval.py</code> (rewrites <code>js/model_artifact.json</code>, which also carries these metrics).</p>
+  </div>
+  <div class="card"><h2>As a High-risk alert</h2><p>Judged only as <b>High vs not High</b>, the shipped model has sensitivity ${pct(tp / hi)} and specificity ${pct(tn / (tn + fp))}. Most of its errors are Low vs Mid mix-ups, which sit on a fuzzy boundary in this dataset (identical vitals appear with different labels), so overall accuracy has a low ceiling. Those Low/Mid errors matter less than a missed High, which the safety rules also guard against.</p></div>
+  <div class="card"><h2>Safety rules sit above the model</h2><p>Rules run after the model and can only raise risk: BP ≥160/110, danger signs with BP ≥140/90, headache or blurred vision with BP unmeasured, SpO₂ &lt;90%, and more. The result panel states whether the model drove the level or a rule/trend overrode it.</p></div>
+  <div class="card"><h2>3-visit trend alert</h2><p><b>Rule-based, not machine-learned.</b> The UCI dataset has about 1,000 rows (~450 unique), one per woman, with no repeat visits, so there is nothing to train a trend model on. Rule: BP is higher at each of the last three visits (steps ≥2 mmHg) and the total rise is ≥10 mmHg systolic or ≥8 mmHg diastolic. It fires even when every single reading is below 140/90, and it floors risk at Mid (High if the latest BP is already ≥140/90).</p></div>
+  <div class="card"><h2>Fetal health (CTG) model</h2>${ctgM ? `<p>Kaggle Fetal Health structure, ${ctgM.rows} CTGs. Grouped CV accuracy ${pct(ctgM.accuracy_mean)}, Pathological recall ${pct(ctgM.pathological_recall_mean)}.</p><div class="tablewrap">${cm(ctgM.confusion_matrix, ctgM.labels)}</div>` : '<p class="muted">Metrics unavailable.</p>'}</div>
+  <div class="card"><h2>Privacy &amp; limits</h2><ul><li>No names are collected. Records are keyed by random Patient IDs and kept only in this browser’s local storage; nothing leaves the device unless the health worker copies a referral message.</li><li>${esc(DISCLAIMER)} MamaGuard is a decision-support tool, not a clinical diagnostic system.</li><li>Plausibility bounds: HR 30–220, SpO₂ 70–100, SBP 60–260, DBP 30–150 (and ≥10 below systolic), blood sugar 1.5–40 mmol/L, temp 34–42 °C, sleep/stress 0–100, age 12–55.</li></ul></div>`;
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MamaGuard</title>
+<meta name="description" content="Offline-first maternal and fetal risk monitor for antenatal check-ups (decision support only).">
+<meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icons/icon.svg" alt="" width="28" height="28"><b>MamaGuard</b><span class="tag">antenatal risk monitor</span></div>
+  <div id="net" class="net online" role="status" aria-live="polite"><span class="dot"></span><span id="net-text">Online</span></div>
+</header>
+<div class="disclaimer" role="note"><b>Decision support only, not a diagnostic tool.</b> Wrist/consumer wellness sensors are not clinical-grade, and sleep/stress scores are not validated predictors of preeclampsia.</div>
+
+<nav class="tabs" id="tabs" aria-label="Sections">
+  <button data-tab="patients" aria-selected="true">Patients</button>
+  <button data-tab="visit">Visit</button>
+  <button data-tab="history">History</button>
+  <button data-tab="ctg">Fetal (CTG)</button>
+  <button data-tab="model">Model &amp; data</button>
+</nav>
+
+<main>
+  <section id="tab-patients"></section>
+  <section id="tab-visit" hidden></section>
+  <section id="tab-history" hidden></section>
+  <section id="tab-ctg" hidden></section>
+  <section id="tab-model" hidden></section>
+</main>
+
+<dialog id="refdlg" aria-labelledby="refttl">
+  <h2 id="refttl">Referral message</h2>
+  <textarea id="reftext" readonly rows="18" aria-label="Referral message text"></textarea>
+  <div class="row">
+    <button class="btn primary" data-act="ref-copy">Copy</button>
+    <button class="btn" data-act="ref-share" id="refshare">Share</button>
+    <button class="btn ghost" data-act="ref-close">Close</button>
+    <span id="refnote" class="muted" role="status"></span>
+  </div>
+</dialog>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
