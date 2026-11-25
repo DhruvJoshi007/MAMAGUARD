@@ -115,3 +115,5 @@ details>summary{cursor:pointer;font-weight:600}
 .sbv.Low{color:var(--low)}.sbv.Mid{color:var(--mid)}.sbv.High{color:var(--high);animation:pulse 1.4s infinite}
 @keyframes pulse{50%{opacity:.55}}
 .res{transition:border-color .3s}
+
+.z-bad .zone{background:var(--high-bg);color:var(--high)}

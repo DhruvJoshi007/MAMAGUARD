@@ -179,8 +179,8 @@ function refresh() {
   const d = S.draft;
   for (const m of METRICS) {
     const row = $(`.mrow[data-key="${m.key}"]`), e = d.entries[m.key], st = ev.status[m.key];
-    row.className = 'mrow ' + st + ' z-' + zoneOf(m.key, e.v) + (row._flash ? ' flash' : '');
-    $('[data-zone]', row).textContent = ZT[zoneOf(m.key, e.v)] || '';
+    row.className = 'mrow ' + st + ' z-' + (st === 'invalid' ? 'bad' : zoneOf(m.key, e.v)) + (row._flash ? ' flash' : '');
+    $('[data-zone]', row).textContent = st === 'invalid' ? 'implausible' : ZT[zoneOf(m.key, e.v)] || '';
     const b = $('[data-badge]', row), [cls, txt, ttl] = badgeFor(e, st);
     b.className = 'badge ' + cls; b.textContent = txt; b.title = ttl;
     let msg = '';
