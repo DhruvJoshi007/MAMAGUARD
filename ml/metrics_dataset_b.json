@@ -1,0 +1,75 @@
+{
+ "rows_raw": 1205,
+ "dropped_missing": 39,
+ "dropped_implausible": 18,
+ "conflicting_groups": 0,
+ "rows_used": 1130,
+ "high": 461,
+ "classes": "Low / High only (no Mid)",
+ "results": [
+  {
+   "name": "Core vitals only (6)",
+   "auc": 0.977,
+   "accuracy": 0.937,
+   "recall_high": 0.894,
+   "precision_high": 0.949
+  },
+  {
+   "name": "Core + BMI",
+   "auc": 0.99,
+   "accuracy": 0.959,
+   "recall_high": 0.939,
+   "precision_high": 0.96
+  },
+  {
+   "name": "Core + all 5 new fields",
+   "auc": 0.999,
+   "accuracy": 0.987,
+   "recall_high": 0.987,
+   "precision_high": 0.981
+  },
+  {
+   "name": "The 5 new fields ONLY",
+   "auc": 0.998,
+   "accuracy": 0.986,
+   "recall_high": 0.985,
+   "precision_high": 0.981
+  },
+  {
+   "name": "UCI original, High vs not-High (core 6)",
+   "auc": 0.935,
+   "accuracy": 0.889,
+   "recall_high": 0.75,
+   "precision_high": 0.792
+  }
+ ],
+ "single_feature_auc": {
+  "BMI": 0.814,
+  "Previous Complications": 0.712,
+  "Preexisting Diabetes": 0.819,
+  "Gestational Diabetes": 0.649,
+  "Mental Health": 0.804
+ },
+ "overlap_with_uci": 237,
+ "overlap_crosstab": {
+  "high": {
+   "High": 47,
+   "Low": 4
+  },
+  "low": {
+   "High": 2,
+   "Low": 78
+  },
+  "mid": {
+   "High": 15,
+   "Low": 91
+  }
+ },
+ "findings": [
+  "The labels are binary (Low/High); the app and the UCI model use Low/Mid/High, so the two are not directly comparable.",
+  "The five new fields separate the classes almost perfectly on their own (AUC about 0.998). Real clinical risk factors do not do this, which suggests the labels or the columns were derived from each other.",
+  "Core-vitals AUC is higher than on the original UCI data collapsed to High vs not-High with the same protocol (0.977 vs 0.935), consistent with re-mapped labels or augmented rows, though not proof of it.",
+  "Only part of the file overlaps the UCI rows, and where it does, UCI Mid rows are mostly relabelled Low. The provenance of the extra columns is unverified.",
+  "Decision: not used to train the deployed model. The new fields are collected in the app and act through safety rules only."
+ ]
+}

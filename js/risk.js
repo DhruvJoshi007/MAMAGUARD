@@ -63,6 +63,9 @@ export function assess({ model, age, vals, symptoms, history = [], blocked = [],
   if (hx.chronic_htn && hyperBP && !severeBP) raise(2, 'rule', 'Known chronic hypertension with BP in the hypertensive range: High risk.', 'r_chtn', {  });
   if (hx.diabetes && bs != null && bs >= 7.8) raise(1, 'rule', `Diabetes history with blood sugar ${bs.toFixed(1)} mmol/L (≥7.8): at least Mid risk.`);
 
+  if (hx.gest_dm) raise(1, 'rule', 'Gestational diabetes: at least Mid risk, needs glucose follow-up.', 'r_gdm', {  });
+  if (hx.mental) add('rule', 0, 'Mental-health concern noted: consider perinatal mental-health screening and support (does not change the risk level).', 'r_mh', {  });
+
   // ---- trend (rule-based) ----
   const series = history.filter(h => h.vals?.sbp != null && h.vals?.dbp != null).map(h => ({ ts: h.ts, sbp: h.vals.sbp, dbp: h.vals.dbp }));
   if (hasBP) series.push({ ts: 'current', sbp, dbp });

@@ -1,12 +1,13 @@
 import { esc, } from './util.js';
 import { DISCLAIMER } from './config.js';
-let ctgM = null;
+let ctgM = null, dbM = null;
 const pct = x => (x * 100).toFixed(1) + '%';
 const pm = o => `${pct(o.mean)} <span class="muted">±${(o.std * 100).toFixed(1)}</span>`;
 const cm = (mat, labels) => `<table class="cm"><thead><tr><th>actual \\ predicted</th>${labels.map(l => `<th>${l}</th>`).join('')}<th>recall</th></tr></thead><tbody>${mat.map((r, i) => { const t = r.reduce((a, b) => a + b, 0); return `<tr><th>${labels[i]}</th>${r.map((v, j) => `<td class="${i === j ? 'diag' : ''}">${v}</td>`).join('')}<td>${pct(r[i] / t)}</td></tr>`; }).join('')}</tbody></table>`;
 const name = k => k.replace('|', ' · ').replace(/_/g, ' ');
 
 export async function renderModelTab(el, m) {
+  if (dbM === null) { try { dbM = await (await fetch('js/dataset_b_metrics.json')).json(); } catch { dbM = false; } }
   if (!ctgM) { try { ctgM = await (await fetch('js/ctg_metrics.json')).json(); } catch { ctgM = false; } }
   const f = m.dataset_facts, T = m.tables, key = `${m.chosen.model}|${m.chosen.feature_set}`, sel = T.raw_dedup[key], s = sel.metrics;
   const other = `${m.chosen.model}|${m.chosen.feature_set === 'base' ? 'engineered' : 'base'}`, o = T.raw_dedup[other].metrics;
@@ -44,6 +45,11 @@ export async function renderModelTab(el, m) {
   <div class="card"><h2>Safety rules sit above the model</h2><p>Rules run after the model and can only raise risk: BP ≥160/110, danger signs with BP ≥140/90, headache or blurred vision with BP unmeasured, SpO₂ &lt;90%, and more. The result panel states whether the model drove the level or a rule/trend overrode it.</p></div>
   <div class="card"><h2>3-visit trend alert</h2><p><b>Rule-based, not machine-learned.</b> The UCI dataset has about 1,000 rows (${f.raw_dedup_rows} unique), one per woman, with no repeat visits, so there is nothing to train a trend model on. Rule: BP is higher at each of the last three visits (steps ≥2 mmHg) and the total rise is ≥10 mmHg systolic or ≥8 mmHg diastolic. It fires even when every single reading is below 140/90, and it floors risk at Mid (High if the latest BP is already ≥140/90).</p></div>
   <div class="card"><h2>Fetal health (CTG) model</h2>${ctgM ? `<p>Kaggle Fetal Health structure, ${ctgM.rows} CTGs${ctgM.duplicates_dropped ? ` (${ctgM.duplicates_dropped} duplicates dropped)` : ''}. Cross-validated accuracy ${pct(ctgM.accuracy_mean)}, Pathological recall ${pct(ctgM.pathological_recall_mean)}.</p><div class="tablewrap">${cm(ctgM.confusion_matrix, ctgM.labels)}</div>` : '<p class="muted">Metrics unavailable.</p>'}</div>
+  ${dbM ? `<div class="card"><h2>Extra dataset (evaluation only, not deployed)</h2>
+    <p>Updated CSV: ${dbM.rows_raw} rows, ${dbM.classes}. After dropping ${dbM.dropped_missing} with missing values, ${dbM.dropped_implausible} implausible and duplicates, ${dbM.rows_used} rows (${dbM.high} High). Same leak-free protocol (grouped 5-fold CV).</p>
+    <div class="tablewrap"><table><thead><tr><th>Inputs</th><th>AUC</th><th>Accuracy</th><th>High recall</th><th>High precision</th></tr></thead><tbody>${dbM.results.map(r => `<tr><td>${esc(r.name)}</td><td>${r.auc}</td><td>${(r.accuracy * 100).toFixed(1)}%</td><td>${(r.recall_high * 100).toFixed(1)}%</td><td>${(r.precision_high * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>
+    <div class="warn soft"><b>Read with care:</b><ul>${dbM.findings.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <p class="muted">Reproduce: <code>python ml/train_dataset_b.py</code></p></div>` : ''}
   <div class="card"><h2>Limits</h2><ul>${m.limitations.map(l => `<li>${esc(l)}</li>`).join('')}<li>${esc(DISCLAIMER)}</li><li>Plausibility bounds: HR 30–220, SpO₂ 70–100, SBP 60–260, DBP 30–150 (and ≥10 below systolic), blood sugar 1.5–40 mmol/L, temp 34–42 °C, sleep/stress 0–100, age 12–55.</li></ul>
   <p class="muted">Reproduce: <code>python ml/train_eval.py</code> (rewrites <code>js/model_artifact.json</code>, which also carries these metrics).</p></div>`;
 }

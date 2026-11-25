@@ -24,6 +24,9 @@ Offline-first progressive web app (PWA) for maternal and fetal risk screening at
 - **Offline PWA** with online/offline banner, manifest and service worker.
 - **Fetal health (CTG) tab** (optional) using the Kaggle Fetal Health structure.
 
+## Extra dataset ("Dataset - Updated")
+`ml/data/maternal_updated.csv` (Low/High only; adds BMI, previous complications, pre-existing diabetes, gestational diabetes, mental health) is evaluated with the same leak-free protocol by `python ml/train_dataset_b.py` (`ml/metrics_dataset_b.json`, shown in the Model & data tab). It is **not** used to train the deployed model: the five new fields alone give AUC 0.998, which real risk factors do not do, so the provenance and labelling are unverified. Gestational diabetes and a mental-health concern are collected in the app and act through safety rules (gestational diabetes: at least Mid; mental health: a note, no change to risk level).
+
 ## Run it
 No build step.
 

@@ -32,7 +32,7 @@ export function buildReferral({ patientId, age, visit, risk }) {
   L.push('SOURCE BREAKDOWN:');
   for (const k of Object.keys(sb)) L.push(` ${k}: ${sb[k].length ? sb[k].join(', ') : '-'}`);
   L.push('');
-  const c = visit.context || {}, hxl = Object.entries(c.hx || {}).filter(([, v]) => v).map(([k]) => ({ prior_pe: 'previous pre-eclampsia', chronic_htn: 'chronic hypertension', diabetes: 'diabetes' }[k]));
+  const c = visit.context || {}, hxl = Object.entries(c.hx || {}).filter(([, v]) => v).map(([k]) => ({ prior_pe: 'previous pre-eclampsia', chronic_htn: 'chronic hypertension', diabetes: 'diabetes', gest_dm: 'gestational diabetes', mental: 'mental-health concern' }[k]));
   if (c.protein || c.weight || hxl.length) L.push(`CLINICAL CONTEXT: urine protein ${c.protein || 'not tested'}${c.weight && c.height ? `; BMI ${(c.weight / ((c.height / 100) ** 2)).toFixed(1)} (${c.weight} kg, ${c.height} cm)` : c.weight ? `; weight ${c.weight} kg` : ''}${hxl.length ? '; history: ' + hxl.join(', ') : ''}`), L.push('');
   L.push('DANGER SYMPTOMS: ' + SYMPTOMS.map(s => `${s.label} ${symText(visit.symptoms[s.key])}`).join('; '));
   L.push('');

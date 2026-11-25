@@ -218,7 +218,7 @@ function createPatient(age, synthetic = false) {
 
 /* ---------- visit draft ---------- */
 function newDraft(weeks = null) {
-  return { weeks, entries: Object.fromEntries(METRICS.map(m => [m.key, { v: null, src: null }])), symptoms: Object.fromEntries(SYMPTOMS.map(s => [s.key, null])), ovOpen: {}, ctx: { protein: null, weight: null, height: null, hx: { prior_pe: false, chronic_htn: false, diabetes: false } } };
+  return { weeks, entries: Object.fromEntries(METRICS.map(m => [m.key, { v: null, src: null }])), symptoms: Object.fromEntries(SYMPTOMS.map(s => [s.key, null])), ovOpen: {}, ctx: { protein: null, weight: null, height: null, hx: { prior_pe: false, chronic_htn: false, diabetes: false, gest_dm: false, mental: false } } };
 }
 function setReading(key, v, src, { stream = false } = {}) {
   const d = S.draft; if (!d) return;
@@ -295,7 +295,7 @@ function buildVisit() {
       <div><label for="ctx-protein">${tt('ctx_prot')}</label><select id="ctx-protein"><option value="">${tt('not_tested')}</option>${['neg', 'trace', '1+', '2+', '3+'].map(x => `<option value="${x}" ${d.ctx.protein === x ? 'selected' : ''}>${x === 'neg' ? tt('neg') : x === 'trace' ? tt('trace') : x}</option>`).join('')}</select></div>
       <div class="row"><div style="flex:1"><label for="ctx-weight">${tt('ctx_w')}</label><input id="ctx-weight" type="number" inputmode="decimal" value="${d.ctx.weight ?? ''}"></div><div style="flex:1"><label for="ctx-height">${tt('ctx_h')}</label><input id="ctx-height" type="number" inputmode="decimal" value="${d.ctx.height ?? ''}"></div></div>
     </div>
-    <div class="row" style="margin-top:8px">${[['prior_pe', tt('hx_pe')], ['chronic_htn', tt('hx_ht')], ['diabetes', tt('hx_dm')]].map(([k, l]) => `<label class="switch"><input type="checkbox" data-hx="${k}" ${d.ctx.hx[k] ? 'checked' : ''}> ${l}</label>`).join('')}<span class="muted" id="bmi"></span></div>
+    <div class="row" style="margin-top:8px">${[['prior_pe', tt('hx_pe')], ['chronic_htn', tt('hx_ht')], ['diabetes', tt('hx_dm')], ['gest_dm', tt('hx_gdm')], ['mental', tt('hx_mh')]].map(([k, l]) => `<label class="switch"><input type="checkbox" data-hx="${k}" ${d.ctx.hx[k] ? 'checked' : ''}> ${l}</label>`).join('')}<span class="muted" id="bmi"></span></div>
   </div>
 
   <div id="result"></div>
