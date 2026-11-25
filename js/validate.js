@@ -18,7 +18,7 @@ export function checkValue(key, v, vals = {}) {
 
 export function checkAge(a) {
   if (!Number.isFinite(a) || a < AGE_BOUNDS[0] || a > AGE_BOUNDS[1])
-    return { ok: false, msg: `Age must be between ${AGE_BOUNDS[0]} and ${AGE_BOUNDS[1]}.` };
+    return { ok: false, msg: `Patients must be at least ${AGE_BOUNDS[0]} years old (accepted range ${AGE_BOUNDS[0]}–${AGE_BOUNDS[1]}).` };
   return { ok: true };
 }
 
