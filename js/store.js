@@ -32,5 +32,7 @@ export function addVisit(id, visit) {
   if (!p?.consent?.given) throw new Error('No recorded consent for this patient: visit not saved.');
   p.visits.push(visit); save(); return visit;
 }
+export function setFollowup(id, fu) { const p = mem.patients[id]; if (!p) return; p.followup = fu; save(); }
+export function patchFollowup(id, patch) { const p = mem.patients[id]; if (p?.followup) { Object.assign(p.followup, patch); save(); } }
 export function deletePatient(id) { delete mem.patients[id]; mem.log = mem.log.filter(l => l.pid !== id); if (mem.lastPid === id) mem.lastPid = null; save(); }
 export function deleteAll() { mem = { patients: {}, log: [] }; try { localStorage.removeItem(KEY); } catch {} }

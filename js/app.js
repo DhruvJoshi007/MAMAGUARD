@@ -8,6 +8,7 @@ import { connectBle, bleSupported } from './ble.js';
 import { buildReferral, sourceBreakdown, patientSummary } from './referral.js';
 import { t as tt, getLang, setLang, LANGS, hasKey } from './i18n.js';
 import { parseSpeech, voiceSupported, listen } from './voice.js';
+import { suggest, dueState, ics, ymd } from './followup.js';
 import { bpChart } from './chart.js';
 import { initCtg } from './ctg.js';
 import { renderModelTab } from './modeltab.js';
@@ -27,6 +28,30 @@ function zoneOf(k, v) {
   return z || 'none';
 }
 const BLE_HINT = 'Watches like the Amazfit Pop 2 have no heart-rate broadcast mode and use a private protocol, so a web page cannot read them over Bluetooth. Use Voice entry or manual entry for their readings, or a device that supports standard Bluetooth health services (chest strap, BP cuff, thermometer, oximeter).';
+const fuText = fu => { const st = dueState(fu.due); return st.state === 'overdue' ? tt('fu_overdue', { d: -st.days }) : st.state === 'today' ? tt('fu_today') : tt('fu_in', { d: st.days }); };
+const overdueList = () => store.patients().filter(p => p.followup && dueState(p.followup.due).state === 'overdue');
+function followupsHtml() {
+  const L = store.patients().filter(p => p.followup).sort((a, b) => a.followup.due.localeCompare(b.followup.due));
+  const perm = typeof Notification === 'undefined' ? null : Notification.permission;
+  const btn = perm === null ? '' : perm === 'granted' ? `<span class="pill Low">${tt('fu_alert_ok')}</span>` : perm === 'denied' ? `<span class="muted">${tt('fu_blocked')}</span>` : `<button class="btn mini" data-act="fu-notify">${tt('fu_alert_on')}</button>`;
+  return `<div class="card" id="fucard"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${tt('fu_list')}</h2>${btn}</div>
+    ${L.length ? `<ul class="fulist">${L.map(p => { const st = dueState(p.followup.due).state; return `<li class="fu ${st}"><b>${esc(p.id)}</b> <span class="pill ${p.followup.level}">${lvlW(p.followup.level)}</span> <span class="fud">${esc(p.followup.due)}</span> <span class="fus">${fuText(p.followup)}</span> <button class="btn mini" data-act="open" data-pid="${esc(p.id)}">${tt('open')}</button> <button class="btn mini ghost" data-act="fu-ics" data-pid="${esc(p.id)}">${tt('fu_ics')}</button></li>`; }).join('')}</ul>` : `<p class="muted">${tt('fu_none')}</p>`}
+    <p class="muted" style="font-size:.78rem;margin:8px 0 0">${tt('fu_note')}</p></div>`;
+}
+function downloadIcs(pid, due, level) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ics(pid, due, level)], { type: 'text/calendar' })); a.download = `mamaguard-followup-${pid}.ics`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+// missed-visit alerts: logged once per missed follow-up, shown as a notification when permitted. Fires while the app is open or when it is opened.
+function checkOverdue() {
+  let changed = false;
+  for (const p of overdueList()) {
+    if (p.followup.alerted) continue;
+    store.patchFollowup(p.id, { alerted: true }); changed = true;
+    const text = tt('fu_missed_log', { id: p.id, date: p.followup.due }); store.addLog('alert', p.id, text);
+    try { if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(tt('fu_alert_title'), { body: tt('fu_alert_body', { id: p.id, date: p.followup.due }), tag: 'mg-' + p.id }); } catch {}
+  }
+  if (changed && S.tab === 'patients') renderPatients();
+}
 const patient = () => store.getPatient(S.pid);
 const mLabel = m => hasKey('m_' + m.key) ? tt('m_' + m.key) : m.label;
 const sLabel = s => hasKey('y_' + s.key) ? tt('y_' + s.key) : s.label;
@@ -107,6 +132,7 @@ async function boot() {
   S.pid = store.lastPid();
   S.sim = new Simulator((k, v, src) => setReading(k, v, src, { stream: src === 'simulated_watch' && S.sim.streaming }));
   wireNet(); wireEvents(); showTab('patients');
+  checkOverdue(); setInterval(checkOverdue, 600000); document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkOverdue(); if (S.tab === 'patients') renderPatients(); } });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => { S.swReady = true; wireNet(); }).catch(() => {});
 }
 function wireNet() {
@@ -167,10 +193,12 @@ function renderPatients() {
     <div class="flowcard" id="flowcard">${store.isPersistent() ? '' : '<p class="warn">Storage is blocked in this browser: data will be lost on reload.</p>'}<div id="flowbody">${flowHtml()}</div></div>
   </section>
   <div class="stats"><div class="stat"><b>${list.length}</b><span>${tt('stat_p')}</span></div><div class="stat"><b>${all.length}</b><span>${tt('stat_v')}</span></div><div class="stat ${hi ? 'hi' : ''}"><b>${hi}</b><span>${tt('stat_h')}</span></div><div class="stat ${al ? 'md' : ''}"><b>${al}</b><span>${tt('stat_t')}</span></div></div>
+  ${overdueList().length ? `<div class="warn" role="alert">⏰ ${overdueList().map(p => esc(p.id) + ' · ' + fuText(p.followup)).join(' | ')}</div>` : ''}
+  ${followupsHtml()}
   <h2>${tt('recent')}</h2>
   ${list.length ? list.map(p => { const last = p.visits.at(-1)?.risk; return `
     <div class="card"><div class="row" style="justify-content:space-between">
-      <div><b style="font-size:1.1rem">${esc(p.id)}</b> ${riskPill(last)} ${last?.trend?.alert ? `<span class="pill Mid">${tt('trend_alert')}</span>` : ''}<br>
+      <div><b style="font-size:1.1rem">${esc(p.id)}</b> ${riskPill(last)} ${p.followup ? `<span class="pill ${dueState(p.followup.due).state === 'overdue' ? 'High' : 'none'}">${tt('fu_title')}: ${esc(p.followup.due)}</span>` : ''} ${last?.trend?.alert ? `<span class="pill Mid">${tt('trend_alert')}</span>` : ''}<br>
       <span class="muted">${tt('age_w')} ${esc(p.age)} · ${p.visits.length} ${tt('stat_v')} · ${tt('s_consent')} ${esc(fmtTime(p.consent.ts))}</span></div>
       <div class="row"><button class="btn" data-act="open" data-pid="${esc(p.id)}">${tt('open')}</button>
       ${S.confirmDel === p.id ? `<button class="btn danger" data-act="delete-confirm" data-pid="${esc(p.id)}">${tt('delc')}</button><button class="btn ghost" data-act="delete-cancel">${tt('cancel')}</button>`
@@ -282,6 +310,7 @@ function refresh() {
   const { ev, r } = compute(); S.lastRisk = r;
   dispatchEvent(new CustomEvent('mg-risk', { detail: r.levelName }));
   const d = S.draft;
+  S.fuS = suggest(r, d.weeks); if (!d.nextEdited) d.next = S.fuS.date;
   for (const m of METRICS) {
     const row = $(`.mrow[data-key="${m.key}"]`), e = d.entries[m.key], st = ev.status[m.key];
     row.className = 'mrow ' + st + ' z-' + (st === 'invalid' ? 'bad' : zoneOf(m.key, e.v)) + (row._flash ? ' flash' : '');
@@ -320,12 +349,13 @@ function resultHtml(r, ev) {
     <h3>${tt('why')}</h3>
     <ul class="reasons">${r.reasons.filter(x => x.kind !== 'model' || true).map(x => `<li><span class="k ${x.kind}">${kindTag[x.kind]}</span>${esc(trReason(x))}</li>`).join('') || `<li>${tt('no_factors')}</li>`}</ul>
     ${r.trend.enough ? `<p class="muted"><b>${tt('trend')}:</b> ${esc(r.trend.text)}</p>` : ''}
+    <div class="nextv"><b>${tt('fu_next')}</b><div class="row"><input type="date" id="fu-date" value="${esc(S.draft.next || '')}" aria-label="${tt('fu_date')}"><span class="muted">${tt(S.fuS.why, S.fuS.args)}</span></div></div>
     <p class="muted"><b>${tt('sources')}:</b> ${Object.entries(srcs).map(([k, v]) => `${k}: ${v.length ? v.join(', ') : '–'}`).join(' · ')}</p>
   </div>`;
 }
 
 /* ---------- history ---------- */
-const ICON = { patient: '+', visit: '●', referral: '↗', delete: '✕' };
+const ICON = { alert: '⏰', patient: '+', visit: '●', referral: '↗', delete: '✕' };
 function logHtml() {
   const L = store.logs().slice(0, 40);
   return L.length ? `<ul class="log2">${L.map(l => `<li class="${l.type}"><span class="ic">${ICON[l.type] || '•'}</span><span class="tx">${esc(l.text)}</span><time>${esc(fmtTime(l.ts))}</time></li>`).join('')}</ul>` : `<p class="muted">${tt('act_empty')}</p>`;
@@ -415,6 +445,7 @@ function saveVisit() {
   const visit = { id: crypto.randomUUID?.() || String(Math.random()), ts: nowIso(), weeks: d.weeks, age: p.age, consentTs: p.consent.ts,
     entries: JSON.parse(JSON.stringify(d.entries)), status: ev.status, vals: ev.vals, symptoms: { ...d.symptoms }, context: JSON.parse(JSON.stringify(d.ctx)), risk: r, overrides };
   store.addVisit(p.id, visit);
+  { const sg = suggest(r, d.weeks); store.setFollowup(p.id, { due: d.next || sg.date, level: r.levelName, days: sg.days, setTs: nowIso() }); }
   store.addLog('visit', p.id, `Visit #${p.visits.length} saved: ${r.levelName.toUpperCase()}${r.provisional ? ' (provisional)' : ''}${r.trend.alert ? ' + trend alert' : ''}${visit.vals.sbp != null ? `, BP ${visit.vals.sbp}/${visit.vals.dbp}` : ', BP not measured'}${r.missing.length ? `, ${r.missing.length} missing` : ''}`);
   S.draft = null; showTab('history');
   if (r.referralEligible) openReferral(buildReferral({ patientId: p.id, age: p.age, visit, risk: r }));
@@ -423,6 +454,7 @@ function saveVisit() {
 function wireEvents() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
   document.addEventListener('change', e => {
+    if (e.target.id === 'fu-date' && S.draft) { S.draft.next = e.target.value; S.draft.nextEdited = true; refresh(); return; }
     const t = e.target;
     if (t.id === 'ctx-protein' && S.draft) { S.draft.ctx.protein = t.value || null; refresh(); }
     if (t.dataset?.hx && S.draft) { S.draft.ctx.hx[t.dataset.hx] = t.checked; refresh(); }
@@ -496,6 +528,8 @@ function wireEvents() {
         case 'set-close': $('#setdlg').close(); break;
         case 'set-theme': curTheme = b.dataset.v; applyTheme(curTheme, b); renderSettings(); break;
         case 'set-lang': changeLang(b.dataset.v); break;
+        case 'fu-notify': if (typeof Notification !== 'undefined') { await Notification.requestPermission(); renderPatients(); checkOverdue(); } break;
+        case 'fu-ics': { const q = store.getPatient(b.dataset.pid); if (q?.followup) downloadIcs(q.id, q.followup.due, q.followup.level); break; }
         case 'ref-close': $('#refdlg').close(); break;
       }
     } catch (err) { console.error(err); const m = $('#np-msg') || $('#savemsg'); if (m) { m.hidden = false; m.textContent = err.message; } }

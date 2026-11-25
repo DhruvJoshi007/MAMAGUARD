@@ -20,6 +20,7 @@ Offline-first progressive web app (PWA) for maternal and fetal risk screening at
 - **Voice entry.** Speak vitals and danger-sign answers (for example "bp 120 over 80, headache no"). Uses the browser speech service (Chrome or Edge), so audio may be processed by its provider. The parser understands English phrases.
 - **Clinical context (optional).** Urine protein, weight/height (BMI), previous pre-eclampsia, chronic hypertension and diabetes. These act through safety rules only (they can raise risk, never lower it); the ML model does not use them.
 - **Referral sharing.** Copy, WhatsApp, SMS, Print / PDF (browser "Save as PDF"), plus a printable per-patient summary.
+- **Follow-up scheduler.** Suggests the next visit by risk (High: 2 days, BP trend alert: 3 days, Mid or provisional: 1 week, Low: routine 4/2/1 weeks by gestational age), editable per visit. The dashboard lists follow-ups and flags missed ones (banner, activity-log entry and a browser notification when permitted). Alerts run while the app is open; there is no server, so for reminders when it is closed use the "Add to calendar" .ics file. The intervals are a planning aid, not clinical orders.
 - **Offline PWA** with online/offline banner, manifest and service worker.
 - **Fetal health (CTG) tab** (optional) using the Kaggle Fetal Health structure.
 

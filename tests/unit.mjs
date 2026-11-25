@@ -1,3 +1,4 @@
+import { suggest, dueState, ics } from '../js/followup.js';
 // Run: node tests/unit.mjs   (no dependencies)
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
@@ -107,5 +108,18 @@ t('voice parser: English and Hindi vitals and danger signs', () => {
   assert.deepEqual(s, { headache: true, vision: false, swelling: true, fetal: true });
   const h = parseSpeech('बीपी 130 80 नाड़ी 88 शुगर 112 सिर दर्द हाँ, धुंधला नहीं');
   assert.equal(h.metrics.sbp, 130); assert.equal(h.metrics.hr, 88); assert.equal(h.metrics.bs, 6.2); assert.equal(h.symptoms.headache, true); assert.equal(h.symptoms.vision, false);
+});
+t('follow-up scheduler: interval by risk, overdue detection, ics', () => {
+  const now = new Date(2026, 0, 10);
+  assert.equal(suggest({ levelName: 'High', trend: {} }, 30, now).days, 2);
+  assert.equal(suggest({ levelName: 'Low', trend: { alert: true } }, 30, now).days, 3);
+  assert.equal(suggest({ levelName: 'Low', provisional: true, trend: {} }, 30, now).days, 7);   // missing data is never routine
+  assert.equal(suggest({ levelName: 'Mid', trend: {} }, 30, now).days, 7);
+  assert.equal(suggest({ levelName: 'Low', trend: {} }, 20, now).days, 28);
+  assert.equal(suggest({ levelName: 'Low', trend: {} }, 30, now).days, 14);
+  assert.equal(suggest({ levelName: 'Low', trend: {} }, 37, now).days, 7);
+  assert.equal(suggest({ levelName: 'High', trend: {} }, 30, now).date, '2026-01-12');
+  assert.equal(dueState('2026-01-09', now).state, 'overdue'); assert.equal(dueState('2026-01-10', now).state, 'today'); assert.equal(dueState('2026-01-11', now).state, 'soon'); assert.equal(dueState('2026-02-10', now).state, 'later');
+  assert.ok(/BEGIN:VALARM/.test(ics('MG-X', '2026-01-12', 'High')) && /DTSTART;VALUE=DATE:20260112/.test(ics('MG-X', '2026-01-12', 'High')));
 });
 console.log(`\n${n} tests passed`);
