@@ -140,3 +140,10 @@ details>summary{cursor:pointer;font-weight:600}
 .btn.big{width:100%;font-size:1.05rem;padding:13px}
 #tab-patients>.stats,#tab-patients>h2,#tab-patients>.card,#tab-patients>button,#tab-patients>p{max-width:760px;margin-left:auto;margin-right:auto}
 @media (max-width:760px){.hero3d{grid-template-columns:1fr}.hl canvas{height:220px}.steps li{font-size:.75rem}}
+
+.log2{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto}
+.log2 li{display:grid;grid-template-columns:24px 1fr auto;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);align-items:start}
+.log2 .ic{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:.7rem;background:var(--man-bg);color:var(--man)}
+.log2 .visit .ic{background:var(--ble-bg);color:var(--ble)}.log2 .referral .ic{background:var(--mid-bg);color:var(--mid)}.log2 .delete .ic{background:var(--high-bg);color:var(--high)}
+.log2 time{color:var(--muted);font-size:.78rem;white-space:nowrap}
+@media (max-width:520px){.log2 li{grid-template-columns:24px 1fr}.log2 time{grid-column:2}}

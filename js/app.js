@@ -30,6 +30,7 @@ async function boot() {
   store.load();
   try { S.model = await getJson('js/model_artifact.json'); S.metrics = S.model.evaluation; }
   catch (e) { document.querySelector('main').innerHTML = `<div class="warn">Could not load the risk model (${esc(e.message)}). Reload while online once.</div>`; return; }
+  S.pid = store.lastPid();
   S.sim = new Simulator((k, v, src) => setReading(k, v, src, { stream: src === 'simulated_watch' && S.sim.streaming }));
   wireNet(); wireEvents(); renderPatients(); showTab('patients');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => { S.swReady = true; wireNet(); }).catch(() => {});
@@ -240,13 +241,22 @@ function resultHtml(r, ev) {
 }
 
 /* ---------- history ---------- */
+const ICON = { patient: '+', visit: '●', referral: '↗', delete: '✕' };
+function logHtml() {
+  const L = store.logs().slice(0, 40);
+  return L.length ? `<ul class="log2">${L.map(l => `<li class="${l.type}"><span class="ic">${ICON[l.type] || '•'}</span><span class="tx">${esc(l.text)}</span><time>${esc(fmtTime(l.ts))}</time></li>`).join('')}</ul>` : '<p class="muted">Activity appears here as you work.</p>';
+}
 function renderHistory() {
-  const el = $('#tab-history'), p = patient();
-  if (!p) { el.innerHTML = '<div class="card"><h2>History</h2><p>Select a patient first.</p></div>'; return; }
+  const el = $('#tab-history'), p = patient(), list = store.patients();
+  const picker = list.length ? `<label for="hpick" class="muted">Patient</label> <select id="hpick" style="width:auto">${list.map(x => `<option value="${esc(x.id)}" ${p && x.id === p.id ? 'selected' : ''}>${esc(x.id)} · ${x.visits.length} visit(s)</option>`).join('')}</select>` : '';
+  const activity = `<div class="card"><h2>Activity log</h2>${logHtml()}</div>`;
+  if (!p) { el.innerHTML = `<div class="card row" style="justify-content:space-between"><h2 style="margin:0">History</h2><div>${picker}</div></div>${activity}`; return; }
   const v = p.visits;
   const cell = (visit, k) => { const e = visit.entries[k]; return e?.v == null ? '<span class="badge none">MISSING</span>' : `${fmtNum(e.v, M[k].dp)} <span class="badge ${e.src}" title="${esc(SRC[e.src].title)}">${SRC[e.src].label}</span>${visit.status[k] === 'overridden' ? ' <span class="pill Mid">override</span>' : ''}`; };
-  el.innerHTML = `<div class="card"><h2>${esc(p.id)}: blood pressure across visits</h2>${bpChart(v.map((x, i) => ({ label: `V${i + 1}${x.weeks ? ' · ' + x.weeks + 'w' : ''}`, sbp: x.vals.sbp, dbp: x.vals.dbp })))}
+  el.innerHTML = `<div class="card row" style="justify-content:space-between"><h2 style="margin:0">${esc(p.id)}</h2><div>${picker}</div></div>
+  <div class="card"><h3>Blood pressure across visits</h3>${bpChart(v.map((x, i) => ({ label: `V${i + 1}${x.weeks ? ' · ' + x.weeks + 'w' : ''}`, sbp: x.vals.sbp, dbp: x.vals.dbp })))}
     ${v.length ? `<p><b>Trend:</b> ${esc(v.at(-1).risk.trend.text)} ${v.at(-1).risk.trend.alert ? '<span class="pill High">ALERT</span>' : ''}</p>` : ''}</div>
+  ${activity}
   <div class="card"><h3>Visits</h3>${v.length ? `<div class="tablewrap"><table><thead><tr><th>#</th><th>Time</th><th>Risk</th>${METRICS.map(m => `<th>${m.label} (${m.unit})</th>`).join('')}<th>Symptoms</th><th></th></tr></thead><tbody>
     ${v.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(fmtTime(x.ts))}</td><td>${riskPill(x.risk)}${x.risk.trend.alert ? ' <span class="pill Mid">trend</span>' : ''}</td>${METRICS.map(m => `<td>${cell(x, m.key)}</td>`).join('')}
     <td>${SYMPTOMS.map(s => `${s.label.split(' ')[0]} ${x.symptoms[s.key] === true ? 'YES' : x.symptoms[s.key] === false ? 'no' : '?'}`).join(', ')}</td>
@@ -256,6 +266,7 @@ function renderHistory() {
 
 /* ---------- referral ---------- */
 function openReferral(text) {
+  if (S.pid) { store.addLog('referral', S.pid, 'Referral message generated'); if (S.tab === 'history') renderHistory(); }
   $('#reftext').value = text; $('#refnote').textContent = '';
   $('#refshare').hidden = !navigator.share;
   $('#refdlg').showModal(); $('#reftext').focus(); $('#reftext').select();
@@ -283,7 +294,7 @@ async function launchScenario(key) {
     const risk = assess({ model: S.model, age: p.age, vals: ev.vals, symptoms, history: hist, blocked: ev.blocked, missing: ev.missing });
     store.addVisit(p.id, { id: crypto.randomUUID?.() || String(Math.random()), ts, weeks: pv.weeks, age: p.age, entries, status: ev.status, vals: ev.vals, symptoms, risk, overrides: [] });
   });
-  S.pid = p.id; S.draft = newDraft(sc.weeks); S.draft.symptoms = { ...sc.symptoms };
+  S.pid = p.id; store.setLast(p.id); S.draft = newDraft(sc.weeks); S.draft.symptoms = { ...sc.symptoms };
   S.log = []; S.simOn = true; S.sim.stopWatch(); simSetup(sc);
   showTab('visit');
   log(`${sc.name}: capturing…`);
@@ -300,6 +311,7 @@ function saveVisit() {
   const visit = { id: crypto.randomUUID?.() || String(Math.random()), ts: nowIso(), weeks: d.weeks, age: p.age, consentTs: p.consent.ts,
     entries: JSON.parse(JSON.stringify(d.entries)), status: ev.status, vals: ev.vals, symptoms: { ...d.symptoms }, risk: r, overrides };
   store.addVisit(p.id, visit);
+  store.addLog('visit', p.id, `Visit #${p.visits.length} saved: ${r.levelName.toUpperCase()}${r.provisional ? ' (provisional)' : ''}${r.trend.alert ? ' + trend alert' : ''}${visit.vals.sbp != null ? `, BP ${visit.vals.sbp}/${visit.vals.dbp}` : ', BP not measured'}${r.missing.length ? `, ${r.missing.length} missing` : ''}`);
   S.draft = null; showTab('history');
   if (r.referralEligible) openReferral(buildReferral({ patientId: p.id, age: p.age, visit, risk: r }));
 }
@@ -308,6 +320,7 @@ function wireEvents() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
   document.addEventListener('change', e => {
     const t = e.target;
+    if (t.id === 'hpick') { S.pid = t.value; store.setLast(S.pid); renderHistory(); }
     if (t.id === 'np-consent') { S.flow.consent = t.checked; $('#flow-next').disabled = !t.checked; }
     if (t.id === 'simtoggle') { S.simOn = t.checked; if (!S.simOn) { S.sim.stopWatch(); } simSetup(null); $('#simpanel').hidden = !S.simOn; $('#watchbtn').textContent = 'Start live stream'; log(S.simOn ? 'Demo mode ON: sensors are simulated.' : 'Demo mode OFF.'); }
   });
@@ -329,15 +342,15 @@ function wireEvents() {
         case 'create-patient': {
           const age = parseFloat(S.flow.age), c = checkAge(age);
           if (!c.ok) { S.flow.step = 1; renderFlow(); const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; }
-          const p = createPatient(age); S.flow = null; S.pid = p.id; S.draft = newDraft(); S.log = []; showTab('visit'); break;
+          const p = createPatient(age); S.flow = null; S.pid = p.id; store.setLast(p.id); S.draft = newDraft(); S.log = []; showTab('visit'); break;
         }
         case 'flow-next': { if (S.flow.step === 1) { const c = checkAge(parseFloat(S.flow.age)); if (!c.ok) { const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; } } S.flow.step++; renderFlow(); break; }
         case 'flow-back': S.flow.step--; renderFlow(); break;
         case 'scenario': await launchScenario(b.dataset.sc); break;
-        case 'open': S.pid = b.dataset.pid; S.draft = newDraft(); S.log = []; S.sim.stopWatch(); S.simOn = false; showTab('visit'); break;
+        case 'open': S.pid = b.dataset.pid; store.setLast(S.pid); S.draft = newDraft(); S.log = []; S.sim.stopWatch(); S.simOn = false; showTab('visit'); break;
         case 'delete': S.confirmDel = b.dataset.pid; renderPatients(); break;
         case 'delete-cancel': S.confirmDel = null; renderPatients(); break;
-        case 'delete-confirm': store.deletePatient(b.dataset.pid); if (S.pid === b.dataset.pid) { S.pid = null; S.draft = null; } S.confirmDel = null; renderPatients(); break;
+        case 'delete-confirm': store.deletePatient(b.dataset.pid); store.addLog('delete', null, 'A patient record and its data were deleted'); if (S.pid === b.dataset.pid) { S.pid = null; S.draft = null; } S.confirmDel = null; renderPatients(); break;
         case 'delete-all': if (S.confirmAll) { store.deleteAll(); S.pid = null; S.draft = null; S.confirmAll = false; renderPatients(); } else { S.confirmAll = true; b.textContent = 'Click again to permanently delete ALL patient data'; b.classList.add('danger'); } break;
         case 'step': { const m = M[key], cur = d.entries[key].v; const base = cur ?? { hr: 80, spo2: 97, sleep: 70, stress: 40, sbp: 115, dbp: 72, bs: 6.5, temp: 36.8 }[key];
           const nv = Math.round((base + (+b.dataset.d) * m.step) * 10) / 10; d.entries[key] = { v: nv, src: 'manual_entry' }; $(`#in-${key}`).value = nv; refresh(); break; }
