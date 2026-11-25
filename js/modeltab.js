@@ -1,13 +1,15 @@
 import { esc, } from './util.js';
 import { DISCLAIMER } from './config.js';
-let ctgM = null, dbM = null;
+let ctgM = null, dbM = null, jnu = null;
 const pct = x => (x * 100).toFixed(1) + '%';
 const pm = o => `${pct(o.mean)} <span class="muted">±${(o.std * 100).toFixed(1)}</span>`;
 const cm = (mat, labels) => `<table class="cm"><thead><tr><th>actual \\ predicted</th>${labels.map(l => `<th>${l}</th>`).join('')}<th>recall</th></tr></thead><tbody>${mat.map((r, i) => { const t = r.reduce((a, b) => a + b, 0); return `<tr><th>${labels[i]}</th>${r.map((v, j) => `<td class="${i === j ? 'diag' : ''}">${v}</td>`).join('')}<td>${pct(r[i] / t)}</td></tr>`; }).join('')}</tbody></table>`;
 const name = k => k.replace('|', ' · ').replace(/_/g, ' ');
 
+const JNUT = (t, cls) => `<div class="tablewrap"><table><thead><tr><th>Inputs</th><th>Model</th><th>AUC</th><th>PR-AUC</th><th>Accuracy</th><th>Recall</th><th>Precision</th><th>Recall in top 20%</th></tr></thead><tbody>${t.results.map(r => `<tr><td>${esc(r.inputs)}</td><td>${esc(r.model)}</td><td>${r.auc}</td><td>${r.pr_auc}</td><td>${(r.accuracy * 100).toFixed(1)}%</td><td>${(r.recall * 100).toFixed(1)}%</td><td>${(r.precision * 100).toFixed(1)}%</td><td>${(r.recall_in_top20pct * 100).toFixed(0)}%</td></tr>`).join('')}</tbody></table></div>`;
 export async function renderModelTab(el, m) {
   if (dbM === null) { try { dbM = await (await fetch('js/dataset_b_metrics.json')).json(); } catch { dbM = false; } }
+  if (jnu === null) { try { jnu = await (await fetch('js/jnu_metrics.json')).json(); } catch { jnu = false; } }
   if (!ctgM) { try { ctgM = await (await fetch('js/ctg_metrics.json')).json(); } catch { ctgM = false; } }
   const f = m.dataset_facts, T = m.tables, key = `${m.chosen.model}|${m.chosen.feature_set}`, sel = T.raw_dedup[key], s = sel.metrics;
   const other = `${m.chosen.model}|${m.chosen.feature_set === 'base' ? 'engineered' : 'base'}`, o = T.raw_dedup[other].metrics;
@@ -50,6 +52,11 @@ export async function renderModelTab(el, m) {
     <div class="tablewrap"><table><thead><tr><th>Inputs</th><th>AUC</th><th>Accuracy</th><th>High recall</th><th>High precision</th></tr></thead><tbody>${dbM.results.map(r => `<tr><td>${esc(r.name)}</td><td>${r.auc}</td><td>${(r.accuracy * 100).toFixed(1)}%</td><td>${(r.recall_high * 100).toFixed(1)}%</td><td>${(r.precision_high * 100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>
     <div class="warn soft"><b>Read with care:</b><ul>${dbM.findings.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <p class="muted">Reproduce: <code>python ml/train_dataset_b.py</code></p></div>` : ''}
+  ${jnu ? `<div class="card"><h2>Large fetal dataset: JNU-CTG (evaluation, not yet in the CTG tab)</h2>
+    <p>${jnu.recordings.toLocaleString()} real 30-minute CTG recordings from ${jnu.pregnancies.toLocaleString()} pregnancies (Jinan University hospital, CC BY 4.0). Patient-level 5-fold CV: no pregnancy appears in both train and test. Deep latent features are excluded as a leak risk.</p>
+    ${[jnu.targets.figo, jnu.targets.asphyxia].map((t, i) => `<h3>${i ? 'Neonatal asphyxia (real outcome)' : 'FIGO normal vs abnormal label'}: ${t.n.toLocaleString()} recordings, ${t.positive.toLocaleString()} positive</h3><p class="muted">${esc(t.description)}</p>${JNUT(t)}`).join('')}
+    <div class="warn soft"><b>Read with care:</b><ul><li>The FIGO label comes from the trace itself, so about 92% accuracy means the model reproduces that reading, not that it predicts how the baby does.</li><li>For the real outcome (asphyxia, 0.7% of recordings) the CTG features score AUC about 0.5, i.e. chance. Adding antenatal history lifts it to about 0.65, which is weak and rests on only ${jnu.targets.asphyxia.positive} cases. This is not a usable screening tool.</li><li>The earlier Kaggle model (${(jnu.previous_kaggle_ctg.accuracy_mean * 100).toFixed(1)}% on ${jnu.previous_kaggle_ctg.rows.toLocaleString()} recordings) predicts three classes, so the numbers are not comparable.</li></ul></div>
+    <p class="muted">Reproduce: <code>python ml/train_jnu.py path/to/JNU-CTG/metadata.csv</code></p></div>` : ''}
   <div class="card"><h2>Limits</h2><ul>${m.limitations.map(l => `<li>${esc(l)}</li>`).join('')}<li>${esc(DISCLAIMER)}</li><li>Plausibility bounds: HR 30–220, SpO₂ 70–100, SBP 60–260, DBP 30–150 (and ≥10 below systolic), blood sugar 1.5–40 mmol/L, temp 34–42 °C, sleep/stress 0–100, age 12–55.</li></ul>
   <p class="muted">Reproduce: <code>python ml/train_eval.py</code> (rewrites <code>js/model_artifact.json</code>, which also carries these metrics).</p></div>`;
 }

@@ -27,6 +27,9 @@ Offline-first progressive web app (PWA) for maternal and fetal risk screening at
 ## Extra dataset ("Dataset - Updated")
 `ml/data/maternal_updated.csv` (Low/High only; adds BMI, previous complications, pre-existing diabetes, gestational diabetes, mental health) is evaluated with the same leak-free protocol by `python ml/train_dataset_b.py` (`ml/metrics_dataset_b.json`, shown in the Model & data tab). It is **not** used to train the deployed model: the five new fields alone give AUC 0.998, which real risk factors do not do, so the provenance and labelling are unverified. Gestational diabetes and a mental-health concern are collected in the app and act through safety rules (gestational diabetes: at least Mid; mental health: a note, no change to risk level).
 
+## JNU-CTG (large fetal dataset)
+`python ml/train_jnu.py path/to/JNU-CTG/metadata.csv` evaluates 20,769 real CTG recordings (Jinan University hospital, CC BY 4.0, cite the dataset authors) with patient-level CV. Results are in the Model & data tab and `ml/metrics_jnu.json`. FIGO-label agreement about 92% accuracy (AUC 0.98); neonatal asphyxia is not predictable from CTG features (AUC about 0.5, about 0.65 with antenatal history). The dataset itself is not in the repo because of its size.
+
 ## Run it
 No build step.
 
