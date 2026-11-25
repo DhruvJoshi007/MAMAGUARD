@@ -14,7 +14,7 @@ void main() {
   // assembly: start on a swirling shell, fly into place (staggered by seed)
   float k0 = ease((uAsm - aSeed.x * .45) / .55);
   float a = aSeed.y * 6.2831 + uTime * (1. - k0) * 1.4;
-  vec3 far = normalize(vec3(cos(a) * (.4 + aSeed.x), (aSeed.x - .5) * 2.2, sin(a) * (.4 + aSeed.x))) * (2.6 + aSeed.y * 1.6);
+  vec3 far = normalize(vec3(cos(a) * (.4 + aSeed.x), (aSeed.x - .5) * 2.2, sin(a) * (.4 + aSeed.x))) * (2.1 + aSeed.y * .9);
   p = mix(far, p, k0);
   vec3 n = aNrm;
   p += n * (.03 * sin(uTime * 1.3 + aSeed.y * 40.) * uAmt + .055 * trav + .045 * uBeat);          // breathing + travelling pulse
@@ -23,7 +23,7 @@ void main() {
   float r0 = length(aPos), w = uBurstT < 2.2 ? exp(-pow((r0 - uBurstT * 1.5) * 3.2, 2.)) * (1. - uBurstT / 2.2) : 0.;
   p += normalize(aPos + .001) * w * .2 + n * w * .06;
   vec3 q = uRot * p;
-  float kp = 3. / (3. + q.z);
+  float kp = min(3. / max(3. + q.z, 1.), 1.7);
   vec2 s = q.xy * kp;
   // pointer: points near the cursor bulge toward the viewer and slide away around it
   vec2 ndc = s * uScale; vec2 dm = (ndc - uMouse) * vec2(uScale.y / uScale.x, 1.) ;
@@ -35,7 +35,7 @@ void main() {
   float lit = (.42 + .6 * dif) * (.5 + .6 * front) + .25 * trav + .6 * w;
   vSpec = pow(dif, 10.) * .7 * front + .3 * rim * dif;
   vCol = uCol * lit * 1.12 + vec3(1., .78, .8) * vSpec;
-  gl_PointSize = (1.6 + 2.9 * kp * kp) * uPx * (1. + .5 * trav + .6 * w + f * .5) * (.55 + .45 * k0);
+  gl_PointSize = min((1.6 + 2.9 * kp * kp) * uPx * (1. + .5 * trav + .6 * w + f * .5) * (.55 + .45 * k0), 14. * uPx);
 }`;
 const FS = `precision mediump float; varying vec3 vCol; varying float vSpec;
 void main(){ vec2 c = gl_PointCoord * 2. - 1.; float d = dot(c, c); if (d > 1.) discard;
@@ -76,7 +76,7 @@ export function start(canvas) {
     if (!S.drag) { S.ang += S.angV; S.angV *= .94; S.ang += (S.hov.x * .35 - S.ang) * .03 * (Math.abs(S.angV) < .002 ? 1 : 0); S.tilt += (.06 + S.hov.y * .25 - S.tilt) * .06; }
     S.amt += ((S.hot ? 1 : 0) - S.amt) * .08; if (!S.hot && S.amt < .004) S.amt = 0;
     S.mk += ((S.hot ? 1 : 0) - S.mk) * .12;
-    if (S.asm < 1) S.asm = Math.min(1, S.asm + .0075);
+    if (S.asm < 1) S.asm = Math.min(1, S.asm + .011);
     const ph = (t / .95) % 1, lub = Math.exp(-Math.pow((ph - .08) * 13, 2)), dub = .6 * Math.exp(-Math.pow((ph - .27) * 13, 2)), beat = (lub + dub) * S.amt;
     const sc = Math.min(w, h) * .3 * (1 + .075 * beat), sx = sc / (w / 2), sy = sc / (h / 2);
     const ca_ = Math.cos(S.ang), sa = Math.sin(S.ang), ct = Math.cos(S.tilt), st_ = Math.sin(S.tilt);

@@ -63,6 +63,19 @@ function frame(now) {
   // 3) ripples and floating hearts from clicks
   for (let i = ripples.length - 1; i >= 0; i--) { const r = ripples[i]; r.r += 340 * dt; r.a -= dt * .6; if (r.a <= 0) { ripples.splice(i, 1); continue; } ctx.strokeStyle = rgba(C.heart, r.a * .6); ctx.lineWidth = 2.5 * r.a + .5; ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, 6.283); ctx.stroke(); }
   for (let i = hearts.length - 1; i >= 0; i--) { const h = hearts[i]; h.life -= dt; if (h.life <= 0) { hearts.splice(i, 1); continue; } h.x += h.vx * dt + Math.sin(t * 3 + h.ph) * .4; h.y += h.vy * dt; h.vy += 20 * dt * -.2; ctx.fillStyle = rgba(C.heart, Math.min(1, h.life) * .55); heartPath(h.x, h.y, h.s * (1 + .1 * Math.sin(t * 8 + h.ph))); ctx.fill(); }
+  // flowing wave layers rising from the bottom; they swell near the pointer and with each ripple
+  const wl = [[.34, 46, .0042, .55, C.tint, .13], [.27, 38, .0058, -.8, C.heart, .09], [.2, 30, .0075, 1.1, C.brand, .1]];
+  wl.forEach(([hgt, amp, fr, sp, col, al], li) => {
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let x = 0; x <= W + 8; x += 8) {
+      const near = mouse.in ? Math.exp(-Math.pow((x - mouse.sx) / 220, 2)) * (mouse.down ? 1.2 : .6) : 0, rip = ripples.reduce((m, r) => m + Math.max(0, r.a) * .5 * Math.exp(-Math.pow((x - r.x) / 260, 2)), 0);
+      const y = H * (1 - hgt * .62) + Math.sin(x * fr + t * sp + li) * amp * (1 + near + rip) + Math.sin(x * fr * 2.3 - t * sp * 1.4) * amp * .35 + px * 18 * (li + 1);
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H); ctx.closePath();
+    const g = ctx.createLinearGradient(0, H * (1 - hgt), 0, H); g.addColorStop(0, rgba(col, al * (light ? 1.2 : 1))); g.addColorStop(1, rgba(col, 0)); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = rgba(col, al * 2.2); ctx.lineWidth = 1.5; ctx.stroke();
+  });
   // 4) ECG trace along the bottom; it swells under the pointer
   const base = H - 36, ph = (t * 1000 / (level === 'High' ? 700 : 1400)) % 1; ctx.strokeStyle = rgba(C.tint, light ? .26 : .3); ctx.lineWidth = 2; ctx.beginPath();
   for (let x = 0; x <= W; x += 4) {

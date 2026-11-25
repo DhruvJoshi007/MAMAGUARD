@@ -473,6 +473,13 @@ function saveVisit() {
   if (r.referralEligible) openReferral(buildReferral({ patientId: p.id, age: p.age, visit, risk: r }));
 }
 
+// material-style ripple on buttons
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest?.('.btn,.swb,.tabs button'); if (!b || b.disabled || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 2, s = document.createElement('span'); s.className = 'rip';
+  Object.assign(s.style, { width: d + 'px', height: d + 'px', left: e.clientX - r.left - d / 2 + 'px', top: e.clientY - r.top - d / 2 + 'px' });
+  b.appendChild(s); setTimeout(() => s.remove(), 650);
+}, { passive: true });
 function wireEvents() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
   document.addEventListener('submit', e => { if (e.target.id === 'chatform') { e.preventDefault(); const i = $('#chatin'), v = i.value.trim(); if (!v) return; i.value = ''; chatPush('me', v); applyUtterance(v); } });

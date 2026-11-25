@@ -180,3 +180,25 @@ details>summary{cursor:pointer;font-weight:600}
 .bub{max-width:85%;padding:7px 12px;border-radius:14px;font-size:.92rem;animation:bubin .2s ease}.bub.me{align-self:flex-end;background:var(--brand);color:var(--brand-ink);border-bottom-right-radius:4px}.bub.sys{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}.bub.live{opacity:.65;font-style:italic}
 @keyframes bubin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .hl{position:relative}.hl::before{content:"";position:absolute;left:50%;top:150px;width:460px;height:460px;max-width:100%;transform:translate(-50%,-50%) scale(calc(1 + var(--beat,0)*.12));border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--heart) calc(18% + var(--hot,0)*30% + var(--beat,0)*25%),transparent),transparent 65%);pointer-events:none;z-index:-1}
+
+/* ---- flowing wave UI ---- */
+.btn,.swb,.tabs button{position:relative;overflow:hidden}.rip{position:absolute;border-radius:50%;background:currentColor;opacity:.22;transform:scale(0);animation:rip .65s ease-out forwards;pointer-events:none}
+@keyframes rip{to{transform:scale(1);opacity:0}}
+.top{position:relative}.top::after,.tabs::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:10px;pointer-events:none;opacity:.55;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='10' viewBox='0 0 160 10'%3E%3Cpath d='M0 5 C20 0 20 10 40 5 S60 0 80 5 S100 10 120 5 S140 0 160 5' fill='none' stroke='%232bb3a6' stroke-width='1.6'/%3E%3C/svg%3E") repeat-x 0 100%/160px 10px;animation:wavex 6s linear infinite}
+.tabs{position:sticky}.tabs::after{animation-duration:9s;animation-direction:reverse;opacity:.4}
+@keyframes wavex{to{background-position:160px 100%}}
+.tabs button[aria-selected=true]{background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--brand) 12%,transparent),transparent);background-size:200% 100%;animation:sheen 3.2s ease-in-out infinite}
+@keyframes sheen{0%{background-position:200% 0}100%{background-position:-200% 0}}
+main>section>*{animation:flowin .7s cubic-bezier(.2,.8,.2,1) both}
+main>section>*:nth-child(2){animation-delay:.07s}main>section>*:nth-child(3){animation-delay:.14s}main>section>*:nth-child(4){animation-delay:.21s}main>section>*:nth-child(5){animation-delay:.28s}main>section>*:nth-child(n+6){animation-delay:.34s}
+@keyframes flowin{from{opacity:0;transform:translateY(22px) scale(.985);filter:blur(4px)}to{opacity:1;transform:none;filter:none}}
+.card,.stat,.fu,.mrow{transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s,border-color .35s}
+.card:hover,.stat:hover{transform:translateY(-3px);box-shadow:0 14px 34px color-mix(in srgb,var(--brand) 18%,transparent)}
+.card{position:relative;overflow:hidden}.card::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s;background:linear-gradient(115deg,transparent 35%,color-mix(in srgb,var(--brand) 9%,transparent) 50%,transparent 65%);background-size:250% 100%;background-position:130% 0}
+.card:hover::after{opacity:1;animation:sweep 1.4s ease}
+@keyframes sweep{to{background-position:-130% 0}}
+.stat b{display:block;animation:bob 4s ease-in-out infinite}.stat:nth-child(2) b{animation-delay:-.8s}.stat:nth-child(3) b{animation-delay:-1.6s}.stat:nth-child(4) b{animation-delay:-2.4s}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.sumbar .ring{animation:glowring 3s ease-in-out infinite}@keyframes glowring{50%{filter:drop-shadow(0 0 7px var(--brand))}}
+@media (prefers-reduced-motion:reduce){.top::after,.tabs::after,.tabs button[aria-selected=true],.stat b,.sumbar .ring{animation:none}main>section>*{animation:none}}
