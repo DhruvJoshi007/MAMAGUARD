@@ -1,6 +1,6 @@
 // Interactive 3D heart: ~1000 surface points of the implicit heart surface, projected by hand (no libraries).
 // Drag to rotate, it beats, and it speeds up and tints with the live risk.
-let raf = 0, canvas = null, pts = null, ang = 0.6, vel = 0.006, drag = null, tilt = 0.25, col = [15, 118, 110], frames = 0, stopped = true;
+let raf = 0, canvas = null, pts = null, ang = 0.6, vel = 0.006, drag = null, tilt = 0.25, col = [225, 29, 72], frames = 0, stopped = true;
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function build() {
@@ -13,7 +13,7 @@ function build() {
   return (pts = out);
 }
 function readColor() {
-  const v = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim(), m = /^#([0-9a-f]{6})$/i.exec(v);
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--heart').trim(), m = /^#([0-9a-f]{6})$/i.exec(v);
   if (m) col = [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16));
 }
 function draw(t) {
@@ -51,3 +51,4 @@ export function startHeart(el) {
 }
 export function stopHeart() { stopped = true; cancelAnimationFrame(raf); }
 export function setHeartSpeed(level) { vel = level === 'High' ? .016 : .006; }
+addEventListener('mg-theme', readColor);

@@ -43,7 +43,22 @@ function applyStatic() {
   $('#signout').textContent = tt('signout');
   $('#refttl').textContent = tt('ref_title');
   for (const [id, k] of [['ref-copy', 'ref_copy'], ['ref-wa', 'ref_wa'], ['ref-sms', 'ref_sms'], ['ref-print', 'ref_print'], ['ref-share', 'ref_share'], ['ref-close', 'close']]) { const b = document.querySelector(`[data-act="${id}"]`); if (b) b.textContent = tt(k); }
-  const sel = $('#lang'); if (sel && sel.value !== getLang()) sel.value = getLang();
+  const sel = $('#lang'); if (sel && sel.value !== getLang()) sel.value = getLang(); $('#theme')?._fill?.();
+}
+const THEMES = ['auto', 'light', 'dark', 'midnight', 'ocean', 'rose', 'sepia'];
+function applyTheme(th, from) {
+  const root = document.documentElement, set = () => { th === 'auto' ? root.removeAttribute('data-theme') : root.dataset.theme = th; dispatchEvent(new Event('mg-theme')); setTimeout(() => document.querySelector('meta[name=theme-color]')?.setAttribute('content', getComputedStyle(root).getPropertyValue('--meta').trim() || '#0f766e'), 80); };
+  try { localStorage.setItem('mamaguard.theme', th); } catch {}
+  if (!from) return set();
+  const r = from.getBoundingClientRect(); root.style.setProperty('--tx', Math.round(r.left + r.width / 2) + 'px'); root.style.setProperty('--ty', Math.round(r.top + r.height / 2) + 'px');
+  if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(set);
+  else { root.classList.add('theming'); set(); setTimeout(() => root.classList.remove('theming'), 650); }
+}
+function wireTheme() {
+  const sel = $('#theme'); let cur = 'auto'; try { cur = localStorage.getItem('mamaguard.theme') || 'auto'; } catch {} if (!THEMES.includes(cur)) cur = 'auto';
+  const fill = () => { sel.innerHTML = THEMES.map(k => `<option value="${k}">${tt('th_' + k)}</option>`).join(''); sel.value = cur; sel.setAttribute('aria-label', tt('th_label')); };
+  fill(); applyTheme(cur); sel._fill = fill;
+  sel.addEventListener('change', () => { cur = sel.value; applyTheme(cur, sel); });
 }
 function wireLang() {
   const sel = $('#lang'); sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); sel.value = getLang();
@@ -85,7 +100,7 @@ function gate() {
 
 /* ---------- boot ---------- */
 async function boot() {
-  store.load(); S.lang = getLang(); wireLang(); applyStatic();
+  store.load(); S.lang = getLang(); wireLang(); wireTheme(); applyStatic();
   try { S.model = await getJson('js/model_artifact.json'); S.metrics = S.model.evaluation; }
   catch (e) { document.querySelector('main').innerHTML = `<div class="warn">Could not load the risk model (${esc(e.message)}). Reload while online once.</div>`; return; }
   if (!auth.isLoggedIn()) await gate(); else showWho();

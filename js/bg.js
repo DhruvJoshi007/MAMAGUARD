@@ -56,3 +56,4 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', readColo
 document.addEventListener('visibilitychange', () => { cancelAnimationFrame(raf); if (!document.hidden && !reduce) raf = requestAnimationFrame(frame); });
 resize(); readColor();
 if (reduce) frame(0), cancelAnimationFrame(raf); else raf = requestAnimationFrame(frame);
+addEventListener('mg-theme', () => setTimeout(readColor, 60));
