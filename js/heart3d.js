@@ -1,7 +1,7 @@
 // Interactive 3D heart (no libraries). ~1300 evenly spaced points on the exact implicit heart surface, lit per point,
 // with a lub-dub heartbeat that ripples up the surface, a pulsing glow, shockwave rings, and pointer-follow with inertia.
 // Drag to spin; it speeds up and tints with live risk. Respects reduced motion.
-let raf = 0, canvas = null, pts = null, ang = 0.6, angV = 0, vel = 0.005, drag = null, tilt = 0.2, tiltT = 0.2, col = [225, 29, 72], frames = 0, stopped = true, hov = { x: 0, y: 0 }, rings = [], lastBeat = -1;
+let raf = 0, canvas = null, pts = null, ang = 0, angV = 0, vel = 0, drag = null, tilt = 0.08, tiltT = 0.08, col = [225, 29, 72], frames = 0, stopped = true, hov = { x: 0, y: 0 }, rings = [], lastBeat = -1;
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const f = (x, y, z) => Math.pow(x * x + 2.25 * y * y + z * z - 1, 3) - x * x * z * z * z - 0.1125 * y * y * z * z * z; // z is the vertical axis here
 function build() {
@@ -30,6 +30,19 @@ function build() {
     const n = Math.hypot(gx, gy, gz) || 1, kk = key(gi, gj, gk); (grid.get(kk) || grid.set(kk, []).get(kk)).push(p);
     out.push({ x: p[0], y: p[2] * .9, z: p[1], nx: gx / n, ny: gz / n, nz: gy / n, ph: Math.random() * 6.283 }); // display: x right, y up, z depth
   }
+  // fill the volume too, so the still front view is densely covered everywhere (not just the visible shell)
+  for (let tries = 0; tries < 90000; tries++) {
+    const x = (Math.random() - .5) * 2.8, y = (Math.random() - .5) * 2.2, z = (Math.random() - .5) * 3.2;
+    if (f(x, y, z) >= 0) continue;
+    const gi = Math.floor(x / cell), gj = Math.floor(y / cell), gk = Math.floor(z / cell); let ok = true;
+    for (let a = -1; a <= 1 && ok; a++) for (let b = -1; b <= 1 && ok; b++) for (let c = -1; c <= 1 && ok; c++) {
+      const L = grid.get(key(gi + a, gj + b, gk + c)); if (L) for (const q of L) { const dx = q[0] - x, dy = q[1] - y, dz = q[2] - z; if (dx * dx + dy * dy + dz * dz < md2) { ok = false; break; } }
+    }
+    if (!ok) continue;
+    const kk = key(gi, gj, gk); (grid.get(kk) || grid.set(kk, []).get(kk)).push([x, y, z]);
+    const n = Math.hypot(x, y, z) || 1;
+    out.push({ x, y: z * .9, z: y, nx: x / n, ny: z / n, nz: y / n, ph: Math.random() * 6.283, inner: true });
+  }
   return (pts = out);
 }
 function readColor() {
@@ -41,7 +54,7 @@ function draw(t) {
   const c = canvas, ctx = c.getContext('2d'), dpr = Math.min(devicePixelRatio || 1, 2), w = c.clientWidth, h = c.clientHeight;
   if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-  const period = vel > .01 ? 640 : 950, p = (t / period) % 1;
+  const period = 950, p = (t / period) % 1;
   const lub = Math.exp(-Math.pow((p - .08) * 13, 2)), dub = .6 * Math.exp(-Math.pow((p - .27) * 13, 2)), beat = lub + dub;
   const bi = Math.floor(t / period); if (bi !== lastBeat) { lastBeat = bi; rings.push({ t0: t }); if (rings.length > 3) rings.shift(); }
   const S = Math.min(w, h) * .3 * (1 + .075 * beat), cx = w / 2, cy = h / 2 + h * .02;
@@ -60,22 +73,21 @@ function draw(t) {
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca, y1 = y * ct - z1 * st, z2 = y * st + z1 * ct, k = 3 / (3 + z2);
     let nx = q.nx * ca + q.nz * sa, nz = -q.nx * sa + q.nz * ca, ny = q.ny * ct - nz * st; nz = q.ny * st + nz * ct;
     const dif = Math.max(0, (nx * L[0] + ny * L[1] + nz * -L[2]) / ln), rim = Math.pow(1 - Math.abs(nz), 3);
-    return [cx + x1 * S * k, cy - y1 * S * k, z2, k, dif, rim, trav];
+    return [cx + x1 * S * k, cy - y1 * S * k, z2, k, dif, rim, trav, q.inner];
   }).sort((a, b2) => b2[2] - a[2]);
   ctx.globalCompositeOperation = 'lighter';
-  for (const [px, py, pz, k, dif, rim, trav] of P) {
+  for (const [px, py, pz, k, dif, rim, trav, inner] of P) {
     const depth = 1 - (pz + 1.4) / 2.8, lum = Math.min(1, .25 + .55 * dif + .35 * rim + .35 * trav), a = Math.max(.1, Math.min(.95, (.2 + .55 * depth) * (.55 + lum)));
     const cr = lerp(r, 255, lum * .55), cg = lerp(g, 200, lum * .35), cb = lerp(b, 210, lum * .35);
     ctx.fillStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${a})`;
-    ctx.beginPath(); ctx.arc(px, py, (1 + 1.7 * k * k) * (1 + .5 * trav), 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.arc(px, py, (inner ? .9 + 1.1 * k * k : 1 + 1.5 * k * k) * (1 + .5 * trav), 0, 6.283); ctx.fill();
   }
   ctx.globalCompositeOperation = 'source-over';
 }
 function loop(t) {
   if (stopped) return;
   if (!canvas.isConnected) { stopped = true; return; }
-  if (!drag) { angV += (vel - angV) * .05; ang += angV; tiltT = .2 + hov.y * .35; tilt += (tiltT - tilt) * .06; ang += hov.x * .004; }
-  else angV *= .9;
+  if (!drag) { ang += (0 - ang) * .08; tilt += (.08 - tilt) * .08; }   // hold still facing front; a drag springs back
   if (++frames % 90 === 0) readColor();
   draw(t); raf = requestAnimationFrame(loop);
 }
@@ -92,5 +104,5 @@ export function startHeart(el) {
   if (reduce) draw(0); else raf = requestAnimationFrame(loop);
 }
 export function stopHeart() { stopped = true; cancelAnimationFrame(raf); }
-export function setHeartSpeed(level) { vel = level === 'High' ? .014 : .005; }
+export function setHeartSpeed(level) { vel = 0; }
 addEventListener('mg-theme', readColor);
