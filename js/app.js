@@ -10,6 +10,7 @@ import { bpChart } from './chart.js';
 import { initCtg } from './ctg.js';
 import { renderModelTab } from './modeltab.js';
 import './bg.js';
+import { startHeart, stopHeart, setHeartSpeed } from './heart3d.js';
 
 const S = { tab: 'patients', pid: null, model: null, metrics: null, draft: null, sim: null, simOn: false, ble: null, log: [], busy: {}, lastRisk: null, ctgReady: false };
 const getJson = u => fetch(u).then(r => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -49,6 +50,7 @@ function showTab(t) {
   S.tab = t;
   for (const b of $$('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
   for (const s of $$('main > section')) s.hidden = s.id !== 'tab-' + t;
+  if (t !== 'patients') stopHeart();
   if (t !== 'visit') dispatchEvent(new CustomEvent('mg-risk', { detail: 'none' }));
   if (t === 'patients') renderPatients();
   if (t === 'visit') buildVisit();
@@ -60,35 +62,54 @@ function showTab(t) {
 
 /* ---------- patients ---------- */
 function riskPill(r) { return r ? `<span class="pill ${r.levelName}">${r.levelName}${r.provisional ? ' (provisional)' : ''}</span>` : '<span class="pill none">no visits</span>'; }
+const STEPS = ['Consent', 'Patient', 'Start'];
+function flowHtml() {
+  const f = S.flow, steps = `<ol class="steps">${STEPS.map((s, i) => `<li class="${i < f.step ? 'done' : i === f.step ? 'on' : ''}"><span>${i < f.step ? '✓' : i + 1}</span>${s}</li>`).join('')}</ol>`;
+  let body = '';
+  if (f.step === 0) body = `<h2>Patient consent</h2>
+    <label class="consent" for="np-consent"><input id="np-consent" type="checkbox" ${f.consent ? 'checked' : ''}><span>The patient has been told what is recorded and <b>consents</b> to anonymised, on-device storage of her vitals for this check-up. The time of consent will be recorded.</span></label>
+    <div class="row end"><button class="btn primary" data-act="flow-next" id="flow-next" ${f.consent ? '' : 'disabled'}>Continue</button></div>`;
+  if (f.step === 1) body = `<h2>Patient details</h2>
+    <label for="np-age">Age (years)</label><input id="np-age" type="number" inputmode="numeric" min="${AGE_BOUNDS[0]}" max="${AGE_BOUNDS[1]}" value="${esc(f.age)}" placeholder="e.g. 27">
+    <p class="muted">No names. A random anonymous Patient ID is created for this record.</p>
+    <div id="np-msg" class="warn" hidden></div>
+    <div class="row end"><button class="btn ghost" data-act="flow-back">Back</button><button class="btn primary" data-act="flow-next">Continue</button></div>`;
+  if (f.step === 2) body = `<h2>Start the visit</h2>
+    <button class="btn primary big" data-act="create-patient" id="np-create">Start live visit</button>
+    <p class="muted" style="text-align:center;margin:10px 0 6px">or try a demo scenario</p>
+    <div class="scn">${Object.entries(SCENARIOS).map(([k, s]) => `<button class="btn" data-act="scenario" data-sc="${k}"><b>${esc(s.name)}</b><small>${esc(s.blurb)}</small></button>`).join('')}</div>
+    <div class="row end"><button class="btn ghost" data-act="flow-back">Back</button></div>`;
+  return steps + body;
+}
 function renderPatients() {
   const el = $('#tab-patients'), list = store.patients();
-  const keep = { age: $('#np-age')?.value ?? '', consent: $('#np-consent')?.checked ?? false };
+  if (!S.flow) S.flow = { step: 0, consent: false, age: '' };
+  const all = list.flatMap(p => p.visits), hi = all.filter(v => v.risk.levelName === 'High').length, al = list.filter(p => p.visits.at(-1)?.risk.trend?.alert).length;
   el.innerHTML = `
-  <div class="card">
-    <h2>New patient</h2>
-    ${store.isPersistent() ? '' : '<p class="warn">Storage is blocked in this browser: data will be lost on reload.</p>'}
-    <div class="grid2">
-      <div><label for="np-age">Age (years)</label><input id="np-age" type="number" inputmode="numeric" min="${AGE_BOUNDS[0]}" max="${AGE_BOUNDS[1]}" value="${esc(keep.age)}" placeholder="e.g. 27"></div>
-      <div><label class="consent" for="np-consent"><input id="np-consent" type="checkbox" ${keep.consent ? 'checked' : ''}><span>The patient has been told what is recorded and <b>consents</b> to anonymised, on-device storage of her vitals for this check-up. The time of consent will be recorded.</span></label></div>
-    </div>
-    <div id="np-msg" class="warn" hidden></div>
-    <div class="row" style="margin-top:10px"><button class="btn primary" data-act="create-patient" id="np-create" ${keep.consent ? '' : 'disabled'}>Create patient &amp; start visit</button></div>
-    <h3 style="margin-top:16px">Demo scenarios</h3>
-    <div class="scn">${Object.entries(SCENARIOS).map(([k, s]) => `<button class="btn" data-act="scenario" data-sc="${k}" ${keep.consent ? '' : 'disabled'}><b>${esc(s.name)}</b><small>${esc(s.blurb)}</small></button>`).join('')}</div>
-  </div>
-  <h2>Patients on this device (${list.length})</h2>
+  <section class="hero3d" id="hero3d">
+    <div class="hl"><canvas id="heart3d" aria-label="Interactive 3D heart: drag to rotate" role="img"></canvas>
+      <h1>Antenatal risk,<br>at a glance</h1><p class="muted">Vitals in, risk and referral out. Works offline.</p></div>
+    <div class="flowcard" id="flowcard">${store.isPersistent() ? '' : '<p class="warn">Storage is blocked in this browser: data will be lost on reload.</p>'}<div id="flowbody">${flowHtml()}</div></div>
+  </section>
+  <div class="stats"><div class="stat"><b>${list.length}</b><span>patients</span></div><div class="stat"><b>${all.length}</b><span>visits</span></div><div class="stat ${hi ? 'hi' : ''}"><b>${hi}</b><span>high-risk visits</span></div><div class="stat ${al ? 'md' : ''}"><b>${al}</b><span>trend alerts</span></div></div>
+  <h2>Recent patients</h2>
   ${list.length ? list.map(p => { const last = p.visits.at(-1)?.risk; return `
     <div class="card"><div class="row" style="justify-content:space-between">
       <div><b style="font-size:1.1rem">${esc(p.id)}</b> ${riskPill(last)} ${last?.trend?.alert ? '<span class="pill Mid">Trend alert</span>' : ''}<br>
-      <span class="muted">Age ${esc(p.age)} · ${p.visits.length} visit(s) · consent ${esc(fmtTime(p.consent.ts))}${p.consent.synthetic ? '' : ''}</span></div>
+      <span class="muted">Age ${esc(p.age)} · ${p.visits.length} visit(s) · consent ${esc(fmtTime(p.consent.ts))}</span></div>
       <div class="row"><button class="btn" data-act="open" data-pid="${esc(p.id)}">Open</button>
       ${S.confirmDel === p.id ? `<button class="btn danger" data-act="delete-confirm" data-pid="${esc(p.id)}">Yes, permanently delete</button><button class="btn ghost" data-act="delete-cancel">Cancel</button>`
         : `<button class="btn danger" data-act="delete" data-pid="${esc(p.id)}">Delete patient data</button>`}</div></div></div>`; }).join('') : '<p class="muted">No patients yet.</p>'}
   ${list.length ? '<button class="btn ghost" data-act="delete-all">Delete ALL data on this device…</button>' : ''}`;
+  startHeart($('#heart3d'));
+  const hero = $('#hero3d'), card = $('#flowcard');
+  hero.addEventListener('pointermove', e => { const r = hero.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5; card.style.setProperty('--ry', (x * 8).toFixed(2) + 'deg'); card.style.setProperty('--rx', (-y * 6).toFixed(2) + 'deg'); });
+  hero.addEventListener('pointerleave', () => { card.style.setProperty('--ry', '0deg'); card.style.setProperty('--rx', '0deg'); });
 }
+function renderFlow() { const b = $('#flowbody'); if (b) { b.innerHTML = flowHtml(); b.classList.remove('swap'); void b.offsetWidth; b.classList.add('swap'); } }
 
 function createPatient(age, synthetic = false) {
-  const p = store.createPatient({ age, consentGiven: $('#np-consent')?.checked, synthetic });
+  const p = store.createPatient({ age, consentGiven: S.flow?.consent, synthetic });
   return p;
 }
 
@@ -252,7 +273,7 @@ function simSetup(sc) { S.sim.setProfile(sc?.target || {}, sc?.unavailable || []
 
 async function launchScenario(key) {
   const sc = SCENARIOS[key];
-  const p = createPatient(sc.age, true);
+  const p = createPatient(sc.age, true); S.flow = null;
   const watchKeys = ['hr', 'spo2', 'sleep', 'stress'];
   sc.prior.forEach(pv => {
     const ts = new Date(Date.now() - pv.weeksAgo * 7 * 864e5).toISOString();
@@ -287,7 +308,7 @@ function wireEvents() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
   document.addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'np-consent' || t.id === 'np-age') { const on = $('#np-consent').checked; $('#np-create').disabled = !on; $$('[data-act=scenario]').forEach(b => b.disabled = !on); }
+    if (t.id === 'np-consent') { S.flow.consent = t.checked; $('#flow-next').disabled = !t.checked; }
     if (t.id === 'simtoggle') { S.simOn = t.checked; if (!S.simOn) { S.sim.stopWatch(); } simSetup(null); $('#simpanel').hidden = !S.simOn; $('#watchbtn').textContent = 'Start live stream'; log(S.simOn ? 'Demo mode ON: sensors are simulated.' : 'Demo mode OFF.'); }
   });
   document.addEventListener('input', e => {
@@ -297,6 +318,7 @@ function wireEvents() {
       S.draft.entries[t.dataset.key] = { v: Number.isNaN(v) ? null : v, src: v == null || Number.isNaN(v) ? null : 'manual_entry' };
       refresh();
     }
+    if (t.id === 'np-age') S.flow.age = t.value;
     if (t.id === 'in-weeks' && S.draft) S.draft.weeks = t.value === '' ? null : parseInt(t.value, 10);
   });
   document.addEventListener('click', async e => {
@@ -305,10 +327,12 @@ function wireEvents() {
     try {
       switch (a) {
         case 'create-patient': {
-          const age = parseFloat($('#np-age').value), c = checkAge(age), m = $('#np-msg');
-          if (!c.ok) { m.hidden = false; m.textContent = c.msg; return; }
-          const p = createPatient(age); S.pid = p.id; S.draft = newDraft(); S.log = []; showTab('visit'); break;
+          const age = parseFloat(S.flow.age), c = checkAge(age);
+          if (!c.ok) { S.flow.step = 1; renderFlow(); const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; }
+          const p = createPatient(age); S.flow = null; S.pid = p.id; S.draft = newDraft(); S.log = []; showTab('visit'); break;
         }
+        case 'flow-next': { if (S.flow.step === 1) { const c = checkAge(parseFloat(S.flow.age)); if (!c.ok) { const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; } } S.flow.step++; renderFlow(); break; }
+        case 'flow-back': S.flow.step--; renderFlow(); break;
         case 'scenario': await launchScenario(b.dataset.sc); break;
         case 'open': S.pid = b.dataset.pid; S.draft = newDraft(); S.log = []; S.sim.stopWatch(); S.simOn = false; showTab('visit'); break;
         case 'delete': S.confirmDel = b.dataset.pid; renderPatients(); break;
