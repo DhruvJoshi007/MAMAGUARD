@@ -1,7 +1,7 @@
 // Interactive 3D heart (no libraries). ~1300 evenly spaced points on the exact implicit heart surface, lit per point,
 // with a lub-dub heartbeat that ripples up the surface, a pulsing glow, shockwave rings, and pointer-follow with inertia.
 // Drag to spin; it speeds up and tints with live risk. Respects reduced motion.
-let ctr = { x: 0, y: 0 }, raf = 0, canvas = null, pts = null, ang = 0, angV = 0, vel = 0, drag = null, tilt = 0.08, tiltT = 0.08, col = [225, 29, 72], frames = 0, stopped = true, hov = { x: 0, y: 0 }, rings = [], lastBeat = -1;
+let amt = 0, hot = false, ctr = { x: 0, y: 0 }, raf = 0, canvas = null, pts = null, ang = 0, angV = 0, vel = 0, drag = null, tilt = 0.08, tiltT = 0.08, col = [225, 29, 72], frames = 0, stopped = true, hov = { x: 0, y: 0 }, rings = [], lastBeat = -1;
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const f = (x, y, z) => Math.pow(x * x + 2.25 * y * y + z * z - 1, 3) - x * x * z * z * z - 0.1125 * y * y * z * z * z; // z is the vertical axis here
 function build() {
@@ -57,8 +57,8 @@ function draw(t) {
   if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
   const period = 950, p = (t / period) % 1;
-  const lub = Math.exp(-Math.pow((p - .08) * 13, 2)), dub = .6 * Math.exp(-Math.pow((p - .27) * 13, 2)), beat = lub + dub;
-  const bi = Math.floor(t / period); if (bi !== lastBeat) { lastBeat = bi; rings.push({ t0: t }); if (rings.length > 3) rings.shift(); }
+  const lub = Math.exp(-Math.pow((p - .08) * 13, 2)), dub = .6 * Math.exp(-Math.pow((p - .27) * 13, 2)), beat = (lub + dub) * amt;   // the pulse only plays while the pointer is on the heart
+  const bi = Math.floor(t / period); if (bi !== lastBeat) { lastBeat = bi; if (hot) { rings.push({ t0: t }); if (rings.length > 3) rings.shift(); } }
   const S = Math.min(w, h) * .3 * (1 + .075 * beat), cx = w / 2, cy = h / 2;
   const [r, g, b] = col;
   // glow behind
@@ -70,8 +70,8 @@ function draw(t) {
   const ca = Math.cos(ang), sa = Math.sin(ang), ct = Math.cos(tilt), st = Math.sin(tilt), L = [-.5, .65, .6], ln = Math.hypot(...L);
   const P = pts.map(q => {
     const wave = Math.max(0, lub * Math.exp(-Math.pow((q.y + 1 - p * 0) * .0, 2))) ; // base pulse
-    const trav = Math.exp(-Math.pow((((t / period) % 1) - .08 - (q.y + 1.1) * .06) * 11, 2)); // pulse travelling up the surface
-    const sh = 1 + .035 * Math.sin(t / 700 + q.ph) + .06 * trav + .02 * wave;
+    const trav = amt * Math.exp(-Math.pow((((t / period) % 1) - .08 - (q.y + 1.1) * .06) * 11, 2)); // pulse travelling up the surface
+    const sh = 1 + .03 * amt * Math.sin(t / 700 + q.ph) + .06 * trav + .02 * wave * amt;
     const x = (q.x - ctr.x) * sh, y = (q.y - ctr.y) * sh, z = q.z * sh;
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca, y1 = y * ct - z1 * st, z2 = y * st + z1 * ct, k = 3 / (3 + z2);
     let nx = q.nx * ca + q.nz * sa, nz = -q.nx * sa + q.nz * ca, ny = q.ny * ct - nz * st; nz = q.ny * st + nz * ct;
@@ -89,6 +89,7 @@ function loop(t) {
   if (stopped) return;
   if (!canvas.isConnected) { stopped = true; return; }
   if (!drag) { ang += (hov.x * .45 - ang) * .07; tilt += (.06 + hov.y * .3 - tilt) * .07; }   // hold still facing front; a drag springs back
+  amt += ((hot ? 1 : 0) - amt) * .08; if (!hot && amt < .004) amt = 0;
   if (++frames % 90 === 0) readColor();
   draw(t); raf = requestAnimationFrame(loop);
 }
@@ -101,7 +102,8 @@ export function startHeart(el) {
   el.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x; ang += dx * .012; angV = dx * .012; tilt = Math.max(-.9, Math.min(.9, tilt + (e.clientY - drag.y) * .008)); drag = { x: e.clientX, y: e.clientY }; if (reduce) draw(0); });
   const end = () => { drag = null; el.style.cursor = 'grab'; };
   el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
-  el.style.cursor = 'grab'; stopped = false;
+  el.addEventListener('pointerenter', () => { hot = true; }); el.addEventListener('pointerleave', () => { hot = false; });
+  el.style.cursor = 'grab'; stopped = false; hot = false; amt = 0;
   if (reduce) draw(0); else raf = requestAnimationFrame(loop);
 }
 export function stopHeart() { stopped = true; cancelAnimationFrame(raf); }
