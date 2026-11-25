@@ -1,5 +1,5 @@
 // Offline-first service worker: precache the app shell + model files, then serve cache-first.
-const CACHE = 'mamaguard-v17';
+const CACHE = 'mamaguard-v18';
 const ASSETS = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   ...['app', 'config', 'util', 'validate', 'model', 'risk', 'ble', 'sim', 'store', 'referral', 'chart', 'ctg', 'modeltab', 'bg', 'heart3d', 'auth', 'voice', 'i18n'].map(n => `js/${n}.js`),
   'js/model_artifact.json', 'js/ctg_model.json', 'js/ctg_metrics.json', 'js/ctg_presets.json'];

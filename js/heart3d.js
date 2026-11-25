@@ -6,18 +6,20 @@ const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const f = (x, y, z) => Math.pow(x * x + 2.25 * y * y + z * z - 1, 3) - x * x * z * z * z - 0.1125 * y * y * z * z * z; // z is the vertical axis here
 function build() {
   if (pts) return pts;
-  const cand = [];
-  for (let tries = 0; cand.length < 4200 && tries < 40000; tries++) {
-    const x = (Math.random() - .5) * 2.8, y = (Math.random() - .5) * 2.2;
-    let prev = f(x, y, -1.6), z0 = -1.6;
-    for (let i = 1; i <= 32; i++) {
-      const z1 = -1.6 + i * 0.1, v = f(x, y, z1);
-      if ((prev < 0) !== (v < 0)) { let a = z0, b = z1; for (let k = 0; k < 18; k++) { const m = (a + b) / 2; ((f(x, y, a) < 0) === (f(x, y, m) < 0)) ? a = m : b = m; } cand.push([x, y, (a + b) / 2]); }
-      prev = v; z0 = z1;
+  const cand = [], ax = [[0, 1, 2], [1, 2, 0], [2, 0, 1]], R = [[-1.5, 1.5], [-1.2, 1.2], [-1.6, 1.6]];   // cast rays along all three axes so steep regions are covered too
+  const at = (a, b, c, k) => { const v = [0, 0, 0]; v[ax[k][0]] = a; v[ax[k][1]] = b; v[ax[k][2]] = c; return v; };
+  for (let k = 0; k < 3; k++) for (let tries = 0; tries < 9000; tries++) {
+    const a = R[ax[k][0]][0] + Math.random() * (R[ax[k][0]][1] - R[ax[k][0]][0]), b = R[ax[k][1]][0] + Math.random() * (R[ax[k][1]][1] - R[ax[k][1]][0]), lo = R[ax[k][2]][0], hi = R[ax[k][2]][1], N = 40;
+    const F = c => { const v = at(a, b, c, k); return f(v[0], v[1], v[2]); };
+    let prev = F(lo), c0 = lo;
+    for (let i = 1; i <= N; i++) {
+      const c1 = lo + (hi - lo) * i / N, v = F(c1);
+      if ((prev < 0) !== (v < 0)) { let u = c0, w2 = c1; for (let q = 0; q < 18; q++) { const m = (u + w2) / 2; ((F(u) < 0) === (F(m) < 0)) ? u = m : w2 = m; } cand.push(at(a, b, (u + w2) / 2, k)); }
+      prev = v; c0 = c1;
     }
   }
   // thin to an even distribution
-  const out = [], md = 0.082, md2 = md * md, cell = md, grid = new Map(), key = (i, j, k) => i * 73856093 ^ j * 19349663 ^ k * 83492791;
+  const out = [], md = 0.074, md2 = md * md, cell = md, grid = new Map(), key = (i, j, k) => i * 73856093 ^ j * 19349663 ^ k * 83492791;
   for (const p of cand.sort(() => Math.random() - .5)) {
     const gi = Math.floor(p[0] / cell), gj = Math.floor(p[1] / cell), gk = Math.floor(p[2] / cell); let ok = true;
     for (let a = -1; a <= 1 && ok; a++) for (let b = -1; b <= 1 && ok; b++) for (let c = -1; c <= 1 && ok; c++) {
