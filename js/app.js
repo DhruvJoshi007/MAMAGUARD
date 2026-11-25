@@ -26,7 +26,7 @@ function zoneOf(k, v) {
     bs: v >= 11.1 ? 'alert' : v > 7.8 ? 'watch' : 'ok', temp: v >= 38 ? 'alert' : v > 37.5 || v < 36 ? 'watch' : 'ok' }[k];
   return z || 'none';
 }
-const BLE_HINT = 'Smartwatches such as Amazfit only appear in the list while they advertise. Close the Zepp app / turn off the phone’s Bluetooth link to the watch, then turn on heart-rate broadcast in the watch or Zepp settings if your model has it. Many Amazfit models use a private protocol and cannot be read by a web page at all; in that case use manual or voice entry.';
+const BLE_HINT = 'Watches like the Amazfit Pop 2 have no heart-rate broadcast mode and use a private protocol, so a web page cannot read them over Bluetooth. Use Voice entry or manual entry for their readings, or a device that supports standard Bluetooth health services (chest strap, BP cuff, thermometer, oximeter).';
 const patient = () => store.getPatient(S.pid);
 const mLabel = m => hasKey('m_' + m.key) ? tt('m_' + m.key) : m.label;
 const sLabel = s => hasKey('y_' + s.key) ? tt('y_' + s.key) : s.label;
@@ -44,7 +44,7 @@ function applyStatic() {
   $('#signout').textContent = tt('signout');
   $('#refttl').textContent = tt('ref_title');
   for (const [id, k] of [['ref-copy', 'ref_copy'], ['ref-wa', 'ref_wa'], ['ref-sms', 'ref_sms'], ['ref-print', 'ref_print'], ['ref-share', 'ref_share'], ['ref-close', 'close']]) { const b = document.querySelector(`[data-act="${id}"]`); if (b) b.textContent = tt(k); }
-  const sel = $('#lang'); if (sel && sel.value !== getLang()) sel.value = getLang(); $('#theme')?._fill?.();
+  $('#settingsbtn-t').textContent = tt('settings'); document.querySelector('[data-act="set-close"]').textContent = tt('close'); if ($('#setdlg').open) renderSettings();
 }
 const THEMES = ['auto', 'light', 'dark', 'midnight', 'ocean', 'rose', 'sepia'];
 function applyTheme(th, from) {
@@ -55,15 +55,14 @@ function applyTheme(th, from) {
   if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(set);
   else { root.classList.add('theming'); set(); setTimeout(() => root.classList.remove('theming'), 650); }
 }
-function wireTheme() {
-  const sel = $('#theme'); let cur = 'auto'; try { cur = localStorage.getItem('mamaguard.theme') || 'auto'; } catch {} if (!THEMES.includes(cur)) cur = 'auto';
-  const fill = () => { sel.innerHTML = THEMES.map(k => `<option value="${k}">${tt('th_' + k)}</option>`).join(''); sel.value = cur; sel.setAttribute('aria-label', tt('th_label')); };
-  fill(); applyTheme(cur); sel._fill = fill;
-  sel.addEventListener('change', () => { cur = sel.value; applyTheme(cur, sel); });
-}
-function wireLang() {
-  const sel = $('#lang'); sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); sel.value = getLang();
-  sel.addEventListener('change', () => { setLang(sel.value); S.lang = getLang(); applyStatic(); if (!$('#gate').hidden) { location.reload(); return; } S.draft && S.tab === 'visit' ? buildVisit() : showTab(S.tab); if (S.tab === 'patients') renderPatients(); });
+let curTheme = 'auto';
+function wireTheme() { try { curTheme = localStorage.getItem('mamaguard.theme') || 'auto'; } catch {} if (!THEMES.includes(curTheme)) curTheme = 'auto'; applyTheme(curTheme); }
+function changeLang(l) { setLang(l); S.lang = getLang(); applyStatic(); if (!$('#gate').hidden) { location.reload(); return; } S.draft && S.tab === 'visit' ? buildVisit() : showTab(S.tab); if (S.tab === 'patients') renderPatients(); }
+const SW = { auto: 'linear-gradient(90deg,#f3f7f6 50%,#0d1a19 50%)', light: '#f3f7f6', dark: '#0d1a19', midnight: '#000', ocean: '#0a1626', rose: '#fff3f5', sepia: '#f6efe2' };
+function renderSettings() {
+  $('#setttl').textContent = tt('settings');
+  $('#setbody').innerHTML = `<h3>${tt('th_label')}</h3><div class="swgrid" role="radiogroup" aria-label="${tt('th_label')}">${THEMES.map(k => `<button class="swb" role="radio" aria-checked="${k === curTheme}" data-act="set-theme" data-v="${k}"><i style="background:${SW[k]}"></i>${tt('th_' + k)}</button>`).join('')}</div>
+    <h3>${tt('langl')}</h3><div class="swgrid" role="radiogroup" aria-label="${tt('langl')}">${Object.entries(LANGS).map(([k, v]) => `<button class="swb" role="radio" aria-checked="${k === getLang()}" data-act="set-lang" data-v="${k}">${v}</button>`).join('')}</div>`;
 }
 
 /* ---------- one-time device login ---------- */
@@ -101,7 +100,7 @@ function gate() {
 
 /* ---------- boot ---------- */
 async function boot() {
-  store.load(); S.lang = getLang(); wireLang(); wireTheme(); applyStatic();
+  store.load(); S.lang = getLang(); wireTheme(); applyStatic();
   try { S.model = await getJson('js/model_artifact.json'); S.metrics = S.model.evaluation; }
   catch (e) { document.querySelector('main').innerHTML = `<div class="warn">Could not load the risk model (${esc(e.message)}). Reload while online once.</div>`; return; }
   if (!auth.isLoggedIn()) await gate(); else showWho();
@@ -493,6 +492,10 @@ function wireEvents() {
         case 'ref-print': printText('MamaGuard referral', $('#reftext').value); break;
         case 'print-summary': printText('MamaGuard patient summary', patientSummary(patient())); break;
         case 'voice': startVoice(b); break;
+        case 'settings': renderSettings(); $('#setdlg').showModal(); break;
+        case 'set-close': $('#setdlg').close(); break;
+        case 'set-theme': curTheme = b.dataset.v; applyTheme(curTheme, b); renderSettings(); break;
+        case 'set-lang': changeLang(b.dataset.v); break;
         case 'ref-close': $('#refdlg').close(); break;
       }
     } catch (err) { console.error(err); const m = $('#np-msg') || $('#savemsg'); if (m) { m.hidden = false; m.textContent = err.message; } }
