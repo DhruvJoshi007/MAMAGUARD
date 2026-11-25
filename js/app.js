@@ -230,7 +230,15 @@ function setReading(key, v, src, { stream = false } = {}) {
   const rw = $(`.mrow[data-key="${key}"]`); if (rw) { rw._flash = true; setTimeout(() => { rw._flash = false; rw.classList.remove('flash'); }, 700); }
   refresh();
 }
-function log(msg) { S.log.unshift(`${new Date().toLocaleTimeString()}  ${msg}`); S.log.length = Math.min(S.log.length, 5); const l = $('#devlog'); if (l) l.textContent = S.log.join('\n'); }
+const LOGKEY = 'mamaguard.devlog';
+S.log = (() => { try { return JSON.parse(localStorage.getItem(LOGKEY) || '[]'); } catch { return []; } })();
+function log(msg) {
+  S.log.push({ ts: nowIso(), pid: S.pid || null, msg }); if (S.log.length > 300) S.log.splice(0, S.log.length - 300);
+  try { localStorage.setItem(LOGKEY, JSON.stringify(S.log)); } catch {}
+  const b = $('#logcount'); if (b) b.textContent = S.log.length; if ($('#logdlg')?.open) renderLogDlg();
+}
+const logLines = () => S.log.map(l => `${new Date(l.ts).toLocaleString()}${l.pid ? '  [' + l.pid + ']' : ''}  ${l.msg}`);
+function renderLogDlg() { $('#logbody').textContent = logLines().slice().reverse().join('\n') || tt('act_empty'); }
 
 function buildVisit() {
   const el = $('#tab-visit'), p = patient();
@@ -259,6 +267,7 @@ function buildVisit() {
     <div class="row" style="margin-top:10px">
       <button class="btn" data-act="ble-connect" ${bleSupported() ? '' : 'title="Web Bluetooth not supported in this browser"'}>${tt('ble')}</button>
       <button class="btn" data-act="voice" id="voicebtn" title="Speak vitals and danger-sign answers (uses your browser speech service)">${tt('voice')}</button>
+      <button class="btn" data-act="log-open" id="logbtn" title="${tt('log_title')}">📋 ${tt('log_btn')} <span class="pill none" id="logcount">${S.log.length}</span></button>
       <span id="simpanel" class="row" ${S.simOn ? '' : 'hidden'}>
         <button class="btn primary" data-act="sim-all">${tt('capall')}</button>
         <button class="btn" data-act="sim-watch" id="watchbtn">${S.sim.streaming ? tt('lstop') : tt('lstart')}</button>
@@ -266,7 +275,11 @@ function buildVisit() {
       </span>
     </div>
     <p class="muted" style="font-size:.78rem">${tt('voice_note')}</p><p class="muted" id="bletxt">${S.ble ? `Connected: ${esc(S.ble.name)} · live: ${esc(S.ble.found.join(', ') || 'none')}` : bleSupported() ? '' : 'Bluetooth unavailable in this browser'}</p>
-    <div class="log" id="devlog" aria-live="polite">${esc(S.log.join('\n'))}</div>
+    <div id="vchat" class="vchat" ${S.chatOpen ? '' : 'hidden'}>
+      <div class="row" style="justify-content:space-between"><b>🎤 ${tt('chat_title')}</b><button class="btn mini ghost" data-act="chat-close" aria-label="${tt('close')}">✕</button></div>
+      <div id="chatlist" class="chatlist" aria-live="polite">${chatHtml()}</div>
+      <form id="chatform" class="row" autocomplete="off"><input id="chatin" type="text" placeholder="${tt('chat_ph')}" style="flex:1 1 200px"><button class="btn primary mini" type="submit">${tt('chat_send')}</button></form>
+    </div>
   </div>
 
   <div class="card"><h2 style="margin-bottom:2px">${tt('vitals')}</h2>
@@ -393,17 +406,26 @@ function printText(title, text) {
   addEventListener('afterprint', done); print();
 }
 let rec = null;
+S.chat = S.chat || [];
+const chatHtml = () => S.chat.map(m => `<div class="bub ${m.who}">${esc(m.text)}</div>`).join('') || `<div class="bub sys">${tt('chat_hint')}</div>`;
+function chatPush(who, text) { S.chat.push({ who, text }); const l = $('#chatlist'); if (l) { l.innerHTML = chatHtml(); l.scrollTop = l.scrollHeight; } }
+function applyUtterance(text) {
+  const r = parseSpeech(text), got = [];
+  for (const [k, v] of Object.entries(r.metrics)) { setReading(k, v, 'manual_entry'); got.push(`${M[k].label} ${v}`); }
+  for (const [k, v] of Object.entries(r.symptoms)) { S.draft.symptoms[k] = v; got.push(`${SYMPTOMS.find(s => s.key === k).label}: ${v ? 'yes' : 'no'}`); }
+  refresh(); log(`Voice/chat: “${text}” → ${got.length ? got.join(', ') : 'nothing recognised'}`);
+  chatPush('sys', got.length ? '✓ ' + got.join(', ') : tt('chat_none'));
+}
+function openChat() { S.chatOpen = true; const c = $('#vchat'); if (c) { c.hidden = false; const l = $('#chatlist'); l.innerHTML = chatHtml(); l.scrollTop = l.scrollHeight; } }
+function setLive(txt) { let el = $('#chatlive'); if (!txt) { el?.remove(); return; } if (!el) { el = document.createElement('div'); el.id = 'chatlive'; el.className = 'bub me live'; $('#chatlist')?.appendChild(el); } el.textContent = txt + ' …'; $('#chatlist').scrollTop = 1e6; }
 function startVoice(btn) {
-  if (!voiceSupported()) { log('Voice entry needs Chrome or Edge (speech recognition).'); return; }
+  openChat();
+  if (!voiceSupported()) { chatPush('sys', tt('chat_nosr')); log('Voice entry needs Chrome or Edge (speech recognition).'); return; }
   if (rec) { rec.stop(); return; }
-  btn.classList.add('listening'); log('Listening… say e.g. "blood pressure 120 over 80, heart rate 82, headache no".');
-  const lang = 'en-IN'; // the spoken-vitals parser understands English phrases only
-  rec = listen(lang, text => {
-    const r = parseSpeech(text), got = [];
-    for (const [k, v] of Object.entries(r.metrics)) { setReading(k, v, 'manual_entry'); got.push(`${M[k].label} ${v}`); }
-    for (const [k, v] of Object.entries(r.symptoms)) { S.draft.symptoms[k] = v; got.push(`${SYMPTOMS.find(s => s.key === k).label}: ${v ? 'yes' : 'no'}`); }
-    refresh(); log(`Heard: “${text}”`); log(got.length ? `Applied: ${got.join(', ')}` : 'Nothing recognised. Try again, e.g. “bp 120 over 80”.');
-  }, err => { rec = null; btn.classList.remove('listening'); if (err && err !== 'no-speech' && err !== 'aborted') log(`Voice error: ${err}`); });
+  btn.classList.add('listening'); chatPush('sys', tt('chat_listen')); log('Voice: listening');
+  rec = listen('en-IN', text => { setLive(''); chatPush('me', text); applyUtterance(text); },
+    err => { rec = null; setLive(''); btn.classList.remove('listening'); if (err && err !== 'no-speech' && err !== 'aborted') { chatPush('sys', `${tt('chat_err')}: ${err}`); log(`Voice error: ${err}`); } else chatPush('sys', tt('chat_stop')); },
+    live => setLive(live));
 }
 
 /* ---------- actions ---------- */
@@ -429,7 +451,7 @@ async function launchScenario(key) {
     store.addVisit(p.id, { id: crypto.randomUUID?.() || String(Math.random()), ts, weeks: pv.weeks, age: p.age, entries, status: ev.status, vals: ev.vals, symptoms, risk, overrides: [] });
   });
   S.pid = p.id; store.setLast(p.id); S.draft = newDraft(sc.weeks); S.draft.symptoms = { ...sc.symptoms };
-  S.log = []; S.simOn = true; S.sim.stopWatch(); simSetup(sc);
+  S.simOn = true; S.sim.stopWatch(); simSetup(sc);
   showTab('visit');
   log(`${sc.name}: capturing…`);
   for (const k of watchKeys) if (sc.target[k] != null) setReading(k, sc.target[k], 'simulated_watch');
@@ -453,6 +475,7 @@ function saveVisit() {
 
 function wireEvents() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
+  document.addEventListener('submit', e => { if (e.target.id === 'chatform') { e.preventDefault(); const i = $('#chatin'), v = i.value.trim(); if (!v) return; i.value = ''; chatPush('me', v); applyUtterance(v); } });
   document.addEventListener('change', e => {
     if (e.target.id === 'fu-date' && S.draft) { S.draft.next = e.target.value; S.draft.nextEdited = true; refresh(); return; }
     const t = e.target;
@@ -481,13 +504,13 @@ function wireEvents() {
         case 'create-patient': {
           const age = parseFloat(S.flow.age), c = checkAge(age);
           if (!c.ok) { S.flow.step = 1; renderFlow(); const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; }
-          const p = createPatient(age); S.flow = null; S.pid = p.id; store.setLast(p.id); S.draft = newDraft(); S.log = []; showTab('visit'); break;
+          const p = createPatient(age); S.flow = null; S.pid = p.id; store.setLast(p.id); S.draft = newDraft(); showTab('visit'); break;
         }
         case 'signout': auth.signOut(); S.sim.stopWatch(); location.reload(); break;
         case 'flow-next': { if (S.flow.step === 1) { const c = checkAge(parseFloat(S.flow.age)); if (!c.ok) { const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; } } S.flow.step++; renderFlow(); break; }
         case 'flow-back': S.flow.step--; renderFlow(); break;
         case 'scenario': await launchScenario(b.dataset.sc); break;
-        case 'open': S.pid = b.dataset.pid; store.setLast(S.pid); S.draft = newDraft(); S.log = []; S.sim.stopWatch(); S.simOn = false; showTab('visit'); break;
+        case 'open': S.pid = b.dataset.pid; store.setLast(S.pid); S.draft = newDraft(); S.sim.stopWatch(); S.simOn = false; showTab('visit'); break;
         case 'delete': S.confirmDel = b.dataset.pid; renderPatients(); break;
         case 'delete-cancel': S.confirmDel = null; renderPatients(); break;
         case 'delete-confirm': store.deletePatient(b.dataset.pid); store.addLog('delete', null, 'A patient record and its data were deleted'); if (S.pid === b.dataset.pid) { S.pid = null; S.draft = null; } S.confirmDel = null; renderPatients(); break;
@@ -530,6 +553,12 @@ function wireEvents() {
         case 'set-lang': changeLang(b.dataset.v); break;
         case 'fu-notify': if (typeof Notification !== 'undefined') { await Notification.requestPermission(); renderPatients(); checkOverdue(); } break;
         case 'fu-ics': { const q = store.getPatient(b.dataset.pid); if (q?.followup) downloadIcs(q.id, q.followup.due, q.followup.level); break; }
+        case 'log-open': renderLogDlg(); $('#logdlg').showModal(); break;
+        case 'log-close': $('#logdlg').close(); break;
+        case 'log-copy': try { await navigator.clipboard.writeText(logLines().join('\n')); $('#lognote').textContent = tt('copied'); } catch { $('#lognote').textContent = ''; } break;
+        case 'log-dl': { const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([logLines().join('\n')], { type: 'text/plain' })); a2.download = 'mamaguard-log.txt'; document.body.appendChild(a2); a2.click(); a2.remove(); break; }
+        case 'log-clear': S.log = []; try { localStorage.removeItem(LOGKEY); } catch {} renderLogDlg(); { const c = $('#logcount'); if (c) c.textContent = 0; } break;
+        case 'chat-close': if (rec) rec.stop(); S.chatOpen = false; $('#vchat').hidden = true; break;
         case 'ref-close': $('#refdlg').close(); break;
       }
     } catch (err) { console.error(err); const m = $('#np-msg') || $('#savemsg'); if (m) { m.hidden = false; m.textContent = err.message; } }

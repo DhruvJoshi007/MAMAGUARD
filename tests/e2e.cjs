@@ -26,7 +26,7 @@ const URL = process.env.URL || 'http://localhost:8765/';
   // --- scenario 3: partial
   await p.click('[data-tab=patients]'); await flow(); await p.click('[data-sc=partial]'); await p.waitForFunction(() => document.querySelector('#in-hr')?.value);
   await p.waitForTimeout(400); txt = await p.innerText('#result'); console.log('PARTIAL:\n', txt.slice(0, 600));
-  assert(/provisional/i.test(txt) && /Missing/.test(txt) && !/\nLOW\n/.test(txt)); assert(/not paired/.test(await p.innerText('#devlog')));
+  assert(/provisional/i.test(txt) && /Missing/.test(txt) && !/\nLOW\n/.test(txt)); await p.click('#logbtn'); assert(/not paired/.test(await p.innerText('#logbody'))); await p.click('[data-act=log-close]');
   await p.screenshot({ path: '/tmp/claude-0/shot-partial.png', fullPage: true });
   // --- plausibility gate: glitch, override
   await p.fill('#in-spo2', '0'); assert(await p.locator('.mrow[data-key=spo2].invalid').count() === 1);

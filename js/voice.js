@@ -42,10 +42,10 @@ export function parseSpeech(text) {
 }
 
 export const voiceSupported = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-export function listen(lang, onText, onEnd) {
+export function listen(lang, onText, onEnd, onInterim) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition, r = new SR();
-  r.lang = lang; r.interimResults = false; r.maxAlternatives = 1; r.continuous = false;
-  r.onresult = e => onText(e.results[0][0].transcript);
+  r.lang = lang; r.interimResults = true; r.maxAlternatives = 1; r.continuous = true;   // keeps listening so you can speak several readings in a row
+  r.onresult = e => { let live = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const res = e.results[i]; if (res.isFinal) onText(res[0].transcript.trim()); else live += res[0].transcript; } onInterim?.(live); };
   r.onerror = e => onEnd(e.error); r.onend = () => onEnd();
   r.start(); return r;
 }
