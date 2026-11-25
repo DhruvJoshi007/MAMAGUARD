@@ -1,7 +1,7 @@
 // Risk engine: ML model + hard safety rules (rules can only RAISE risk) + strict missing-data handling
 // + rule-based 3-visit BP trend alert (UCI data has no repeat visits, so the trend is NOT learned).
 import { M, SYMPTOMS, cToF } from './config.js';
-import { predictProba, argmax, drivers, outsideTraining } from './model.js';
+import { predictProba, rowFor, decide, drivers, outsideTraining } from './model.js';
 
 export const LEVELS = ['Low', 'Mid', 'High'];
 const FEAT_LABEL = { Age: 'Age', SystolicBP: 'Systolic BP', DiastolicBP: 'Diastolic BP', BS: 'Blood sugar', BodyTemp: 'Body temperature', HeartRate: 'Heart rate' };
@@ -67,11 +67,11 @@ export function assess({ model, age, vals, symptoms, history = [], blocked = [],
     ? [age, sbp, dbp, bs, cToF(temp), hr] : null;
   let probs = null, modelLevel = null, drv = [], extrapolated = [];
   if (x) {
-    probs = predictProba(model, x);
-    modelLevel = argmax(probs);
+    probs = predictProba(model, rowFor(model, x));
+    modelLevel = decide(model, probs);
     drv = drivers(model, x, modelLevel, probs).filter(d => d.delta > 0.02).slice(0, 3);
     extrapolated = outsideTraining(model, x).map(f => FEAT_LABEL[f]);
-    add('model', modelLevel, `ML model (UCI-trained random forest): ${LEVELS[modelLevel]} risk (${LEVELS.map((l, i) => `${l} ${Math.round(probs[i] * 100)}%`).join(' / ')}).`);
+    add('model', modelLevel, `ML model (UCI-trained random forest): ${LEVELS[modelLevel]} risk (${LEVELS.map((l, i) => `${l} ${Math.round(probs[i] * 100)}%`).join(' / ')})${model.high_threshold ? `. Triage setting: flags High when P(High) ≥ ${Math.round(model.high_threshold * 100)}%` : ''}.`);
     if (drv.length) add('model', modelLevel, `Inputs pushing the model toward ${LEVELS[modelLevel]} (approximate): ` + drv.map(d => `${FEAT_LABEL[model.features[d.index]]} ${d.delta >= 0 ? '+' : ''}${Math.round(d.delta * 100)} pts`).join(', ') + '.');
     if (extrapolated.length) add('missing', 1, `Outside the model's training range: ${extrapolated.join(', ')}. The model is extrapolating; rely on the safety rules.`);
   }

@@ -4,7 +4,8 @@ const URL = process.env.URL || 'http://localhost:8765/';
 (async () => {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 420, height: 900 }, deviceScaleFactor: 1 });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
-  await p.goto(URL); await p.waitForSelector('#np-consent');
+  await p.goto(URL); await p.waitForSelector('#gateform');
+  await p.fill('#g-name','Test Worker'); await p.fill('#g-pin','1234'); await p.fill('#g-pin2','1234'); await p.click('#gateform button[type=submit]'); await p.waitForSelector('#np-consent');
   assert(await p.locator('#flow-next').isDisabled(), 'flow locked before consent');
   assert.equal(await p.locator('[data-act=scenario]').count(), 0, 'scenarios hidden before consent');
   const flow = async () => { if (!(await p.locator('#np-consent').count())) return; await p.check('#np-consent'); await p.click('#flow-next'); await p.fill('#np-age', '27'); await p.click('[data-act=flow-next]'); };
@@ -44,6 +45,7 @@ const URL = process.env.URL || 'http://localhost:8765/';
   // --- offline
   await p.waitForFunction(() => navigator.serviceWorker.controller || navigator.serviceWorker.ready.then(() => true)); await p.reload(); await p.waitForFunction(() => navigator.serviceWorker.controller);
   await ctx.setOffline(true); await p.reload(); await p.waitForSelector('#np-consent');
+  assert.equal(await p.locator('#gate:visible').count(), 0, 'stays logged in after reload');
   console.log('OFFLINE banner:', await p.innerText('#net')); assert(/Offline/.test(await p.innerText('#net')));
   console.log('patients persisted offline:', await p.locator('[data-act=open]').count());
   console.log('ERRORS:', errs); await b.close();

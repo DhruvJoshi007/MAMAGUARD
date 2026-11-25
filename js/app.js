@@ -10,6 +10,7 @@ import { bpChart } from './chart.js';
 import { initCtg } from './ctg.js';
 import { renderModelTab } from './modeltab.js';
 import './bg.js';
+import * as auth from './auth.js';
 import { startHeart, stopHeart, setHeartSpeed } from './heart3d.js';
 
 const S = { tab: 'patients', pid: null, model: null, metrics: null, draft: null, sim: null, simOn: false, ble: null, log: [], busy: {}, lastRisk: null, ctgReady: false };
@@ -25,11 +26,45 @@ function zoneOf(k, v) {
 }
 const patient = () => store.getPatient(S.pid);
 
+/* ---------- one-time device login ---------- */
+function showWho() { const on = auth.isLoggedIn(); $('#who').hidden = $('#signout').hidden = !on; $('#who').textContent = on ? (auth.workerName() || 'Signed in') : ''; }
+function gate() {
+  return new Promise(resolve => {
+    const g = $('#gate'), setup = !auth.isSetUp();
+    g.hidden = false; $('main').setAttribute('inert', ''); $('#tabs').setAttribute('inert', '');
+    g.innerHTML = `<form class="gatecard" id="gateform" autocomplete="off">
+      <img src="icons/icon.svg" alt="" width="56" height="56"><h1>${setup ? 'Set up this device' : 'Welcome back'}</h1>
+      <p class="muted">${setup ? 'One-time setup. After this, MamaGuard stays signed in on this device.' : 'Enter your PIN to continue.'}</p>
+      ${setup ? '<label for="g-name">Your name or initials</label><input id="g-name" type="text" maxlength="40" placeholder="e.g. A. Rao" required>' : ''}
+      <label for="g-pin">${setup ? 'Choose a PIN (4–6 digits)' : 'PIN'}</label><input id="g-pin" type="password" inputmode="numeric" pattern="\\d{4,6}" maxlength="6" autocomplete="${setup ? 'new-password' : 'current-password'}" required>
+      ${setup ? '<label for="g-pin2">Repeat PIN</label><input id="g-pin2" type="password" inputmode="numeric" pattern="\\d{4,6}" maxlength="6" required>' : ''}
+      <div id="g-msg" class="warn" hidden></div>
+      <button class="btn primary big" type="submit">${setup ? 'Save and continue' : 'Sign in'}</button>
+      ${setup ? '' : '<button class="btn ghost" type="button" id="g-reset">Forgot PIN? Reset this device</button>'}
+      <p class="muted" style="font-size:.78rem">Local to this browser only. It keeps casual users out of the records; it is not a replacement for device security.</p></form>`;
+    $('#g-pin').focus();
+    const msg = t => { const m = $('#g-msg'); m.hidden = !t; m.textContent = t || ''; };
+    $('#gateform').addEventListener('submit', async e => {
+      e.preventDefault();
+      try {
+        if (setup) { if ($('#g-pin').value !== $('#g-pin2').value) return msg('PINs do not match.'); await auth.setup($('#g-name').value, $('#g-pin').value); }
+        else await auth.signIn($('#g-pin').value);
+        g.hidden = true; g.innerHTML = ''; $('main').removeAttribute('inert'); $('#tabs').removeAttribute('inert'); showWho(); resolve();
+      } catch (err) { msg(err.message); }
+    });
+    $('#g-reset')?.addEventListener('click', () => {
+      if (!$('#g-reset').dataset.sure) { $('#g-reset').dataset.sure = '1'; $('#g-reset').textContent = 'Click again: this erases ALL patient data on this device'; $('#g-reset').classList.add('danger'); return; }
+      store.deleteAll(); auth.resetProfile(); S.pid = null; location.reload();
+    });
+  });
+}
+
 /* ---------- boot ---------- */
 async function boot() {
   store.load();
   try { S.model = await getJson('js/model_artifact.json'); S.metrics = S.model.evaluation; }
   catch (e) { document.querySelector('main').innerHTML = `<div class="warn">Could not load the risk model (${esc(e.message)}). Reload while online once.</div>`; return; }
+  if (!auth.isLoggedIn()) await gate(); else showWho();
   S.pid = store.lastPid();
   S.sim = new Simulator((k, v, src) => setReading(k, v, src, { stream: src === 'simulated_watch' && S.sim.streaming }));
   wireNet(); wireEvents(); renderPatients(); showTab('patients');
@@ -344,6 +379,7 @@ function wireEvents() {
           if (!c.ok) { S.flow.step = 1; renderFlow(); const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; }
           const p = createPatient(age); S.flow = null; S.pid = p.id; store.setLast(p.id); S.draft = newDraft(); S.log = []; showTab('visit'); break;
         }
+        case 'signout': auth.signOut(); S.sim.stopWatch(); location.reload(); break;
         case 'flow-next': { if (S.flow.step === 1) { const c = checkAge(parseFloat(S.flow.age)); if (!c.ok) { const m = $('#np-msg'); m.hidden = false; m.textContent = c.msg; return; } } S.flow.step++; renderFlow(); break; }
         case 'flow-back': S.flow.step--; renderFlow(); break;
         case 'scenario': await launchScenario(b.dataset.sc); break;

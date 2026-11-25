@@ -1,3 +1,4 @@
+[hidden]{display:none!important}
 :root{
   --bg:#f3f7f6; --card:#ffffff; --ink:#14302f; --muted:#5a706e; --line:#d5e1df;
   --brand:#0f766e; --brand-ink:#ffffff; --focus:#0b5ed7;
@@ -147,3 +148,8 @@ details>summary{cursor:pointer;font-weight:600}
 .log2 .visit .ic{background:var(--ble-bg);color:var(--ble)}.log2 .referral .ic{background:var(--mid-bg);color:var(--mid)}.log2 .delete .ic{background:var(--high-bg);color:var(--high)}
 .log2 time{color:var(--muted);font-size:.78rem;white-space:nowrap}
 @media (max-width:520px){.log2 li{grid-template-columns:24px 1fr}.log2 time{grid-column:2}}
+
+.gate{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(10px)}
+.gatecard{width:min(400px,100%);background:var(--card);border:1px solid var(--brand);border-radius:18px;padding:24px;display:flex;flex-direction:column;gap:8px;box-shadow:0 20px 60px #0004;text-align:left}
+.gatecard img{align-self:center}.gatecard h1{text-align:center;font-size:1.4rem;margin:4px 0 0}.gatecard p{text-align:center}
+.gatecard button.big{margin-top:6px}

@@ -5,6 +5,7 @@ Offline-first progressive web app (PWA) for maternal and fetal risk screening at
 > **Decision support only, not a diagnostic tool.** Wrist/consumer wellness sensors are not clinical-grade, and sleep/stress scores are not validated predictors of preeclampsia.
 
 ## Features
+- **One-time device login.** First launch sets up a name and PIN (hashed with PBKDF2, stored locally); the device then stays signed in until "Sign out". Local to the browser, not a replacement for device security.
 - **Consent first.** Patient creation, device pairing and saving a visit stay locked until a consent box is ticked; the consent time is recorded.
 - **Local-first and anonymous.** Records use random Patient IDs (no names anywhere) and live in browser local storage. Each patient has a "Delete patient data" action.
 - **Source on every value.** Each metric carries `ble_device`, `simulated_watch`, `simulated_device` or `manual_entry`. The breakdown is stored with the visit and printed in the referral.
@@ -34,7 +35,8 @@ Web Bluetooth needs `localhost` or HTTPS and Chrome/Edge (not iOS Safari). For a
 Data: [UCI Maternal Health Risk](https://archive.ics.uci.edu/dataset/863/maternal+health+risk) (Ahmed & Kashem, 2020; CC BY 4.0): Age, SystolicBP, DiastolicBP, BS, BodyTemp, HeartRate → Low / Mid / High.
 
 - 562 of the 1,014 rows are exact duplicates. They are dropped before evaluation (452 unique rows remain); identical feature vectors share a fold; scaling is fitted inside each fold. Naive k-fold on all rows reports about 81% accuracy because of this leak.
-- Leak-free 5-fold CV, 5 repeats, shipped random forest: accuracy **70.6%**, macro-F1 63.8%, **High-risk recall 81.1%**, High-risk precision 73.0%. Logistic regression and gradient boosting were compared; the winner is chosen by High-risk recall (rule in `ml/train_eval.py`).
+- Leak-free 5-fold CV, 5 repeats, shipped random forest: accuracy **70.6%**, macro-F1 63.8%, **High-risk recall 81.1%**, High-risk precision 73.0%, High-vs-rest ROC-AUC 0.939, PR-AUC 0.859. Conflicting labels are handled two ways (raw-dedup headline and majority-vote resolved) and shown side by side; clinical features (pulse pressure, MAP, shock index, threshold flags) were tested and did not help, so they are not shipped.
+- High-risk triage: the app flags High at P(High) ≥ 21%. A nested check gives High recall 88.7% at precision 63.1% (more false alarms).
 - Ceiling: 35 identical sets of vitals carry different labels, and most errors are Low vs Mid. The model alone misses some true High cases, which is why safety rules sit on top.
 - No gestational age, urine protein, SpO₂, sleep or stress in the data, so those never enter the model. No repeat visits exist, so the trend alert is rule-based, not learned.
 - CTG model: accuracy 91.4%, Pathological recall 93.1% (same protocol on de-duplicated rows). Not externally validated.
@@ -54,7 +56,7 @@ python ml/train_eval.py        # writes js/model_artifact.json (model + metrics)
 | `js/model.js` | in-browser inference for the exported model |
 | `js/validate.js`, `js/config.js` | plausibility bounds, metric definitions |
 | `js/ble.js`, `js/sim.js` | Web Bluetooth parsers, simulator and scenarios |
-| `js/store.js`, `js/referral.js`, `js/chart.js`, `js/ctg.js`, `js/modeltab.js`, `js/bg.js` | storage, referral text, BP chart, CTG tab, model tab, background |
+| `js/store.js`, `js/referral.js`, `js/chart.js`, `js/ctg.js`, `js/modeltab.js`, `js/bg.js`, `js/heart3d.js`, `js/auth.js` | storage, referral text, BP chart, CTG tab, model tab, background |
 | `js/model_artifact.json` | trained model and cross-validated metrics |
 | `ml/train_eval.py`, `ml/data/` | training, evaluation and datasets |
 | `tests/unit.mjs`, `tests/e2e.cjs` | tests |

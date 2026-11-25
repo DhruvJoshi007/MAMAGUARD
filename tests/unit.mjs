@@ -1,7 +1,7 @@
 // Run: node tests/unit.mjs   (no dependencies)
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { predictProba } from '../js/model.js';
+import { predictProba, rowFor, decide } from '../js/model.js';
 import { assess, trendCheck } from '../js/risk.js';
 import { evaluate } from '../js/validate.js';
 import * as ble from '../js/ble.js';
@@ -13,7 +13,7 @@ let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok  ' + name); };
 
 t('JS inference matches scikit-learn predict_proba on 40 fixtures', () => {
   const fx = JSON.parse(fs.readFileSync(new URL('../ml/fixtures.json', import.meta.url)));
-  for (const f of fx) { const p = predictProba(model, f.x); p.forEach((v, i) => assert.ok(Math.abs(v - f.p[i]) < 2e-3, `${v} vs ${f.p[i]}`)); }
+  for (const f of fx) { const p = predictProba(model, rowFor(model, f.base)); p.forEach((v, i) => assert.ok(Math.abs(v - f.p[i]) < 2e-3, `${v} vs ${f.p[i]}`)); }
 });
 
 const SYM0 = { headache: false, vision: false, swelling: false, fetal: false };
