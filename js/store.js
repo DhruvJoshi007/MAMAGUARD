@@ -22,7 +22,7 @@ export const lastPid = () => (mem.lastPid && mem.patients[mem.lastPid] ? mem.las
 export function setLast(pid) { mem.lastPid = pid; save(); }
 export function createPatient({ age, consentGiven, synthetic = false }) {
   if (!consentGiven) throw new Error('Patient consent is required.');
-  if (!(age >= 18)) throw new Error('Patients must be at least 18 years old.');
+  if (!(age >= 19)) throw new Error('Patients must be older than 18 (age 19 or above).');
   const id = newPatientId(Object.keys(mem.patients));
   const ts = nowIso();
   mem.patients[id] = { id, age, createdTs: ts, consent: { given: true, ts, text: 'Patient agreed to local, anonymised storage of vitals for this antenatal check-up.', synthetic }, visits: [] };

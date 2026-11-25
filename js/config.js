@@ -19,7 +19,7 @@ export const METRICS = [
   { key: 'temp',   label: 'Body temp',      unit: '°C',     group: 'device', min: 34,  max: 42,  step: 0.1, dp: 1, model: true },
 ];
 export const M = Object.fromEntries(METRICS.map(m => [m.key, m]));
-export const AGE_BOUNDS = [18, 55];
+export const AGE_BOUNDS = [19, 55];
 export const WEEKS_BOUNDS = [4, 42];
 
 export const SYMPTOMS = [
